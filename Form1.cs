@@ -47,10 +47,11 @@ namespace Q4Sender
             var layout = new TableLayoutPanel
             {
                 ColumnCount = 1,
-                RowCount = 1,
+                RowCount = 2,
                 Dock = DockStyle.Fill,
             };
             layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             Controls.Add(layout);
 
             // 画像表示領域
@@ -88,25 +89,31 @@ namespace Q4Sender
             Controls.Add(_helpOverlay);
 
             // QR番号表示用ラベル
+            var counterPanel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Color.FromArgb(180, 15, 23, 42),
+                Padding = new Padding(0, 6, 20, 6),
+            };
+            layout.Controls.Add(counterPanel, 0, 1);
+
             _counterLabel = new Label
             {
                 AutoSize = true,
                 ForeColor = Color.White,
-                BackColor = Color.FromArgb(180, 15, 23, 42),
                 Font = new Font(SystemFonts.DefaultFont.FontFamily, 10f, FontStyle.Bold),
-                Padding = new Padding(10, 6, 10, 6),
                 Text = "0 / 0",
                 TextAlign = ContentAlignment.MiddleRight
             };
-            Controls.Add(_counterLabel);
-            _counterLabel.BringToFront();
+            _counterLabel.Dock = DockStyle.Right;
+            _counterLabel.Padding = new Padding(10, 0, 10, 0);
+            counterPanel.Controls.Add(_counterLabel);
 
             // 配置（左上・右下に余白を空ける）
             _helpOverlay.Left = 10;
             _helpOverlay.Top = 10;
             _helpOverlay.BringToFront();
             _helpOverlay.Visible = true; // 起動時は表示
-            UpdateCounterLabelPosition();
 
             // 自動非表示タイマ（4秒）
             _helpAutoHide.Tick += (s, e) => { _helpAutoHide.Stop(); _helpOverlay.Visible = false; };
@@ -119,7 +126,6 @@ namespace Q4Sender
             // イベント
             _timer.Tick += (s, e) => ShowNext();
             KeyDown += Form1_KeyDown;
-            Resize += (s, e) => UpdateCounterLabelPosition();
 
             Shown += (s, e) =>
             {
@@ -359,21 +365,6 @@ namespace Q4Sender
                 _counterLabel.Text = $"{_idx + 1} / {_lines.Length}";
             }
 
-            UpdateCounterLabelPosition();
-        }
-
-        private void UpdateCounterLabelPosition()
-        {
-            if (_counterLabel == null) return;
-
-            const int marginRight = 20;
-            const int marginBottom = 50;
-
-            int x = Math.Max(10, ClientSize.Width - _counterLabel.Width - marginRight);
-            int y = Math.Max(10, ClientSize.Height - _counterLabel.Height - marginBottom);
-
-            _counterLabel.Location = new Point(x, y);
-            _counterLabel.BringToFront();
         }
     }
 }
