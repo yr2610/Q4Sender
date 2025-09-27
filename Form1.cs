@@ -13,13 +13,14 @@ namespace Q4Sender
 {
     public partial class Form1 : Form
     {
-        // ---- ó‘Ô ----
+        private Label _progressLabel;
+        // ---- çŠ¶æ…‹ ----
         private string[] _lines = Array.Empty<string>();
         private int _idx = 0;
         private bool _paused = false;
         private bool _fullscreen = false;
 
-        // ƒ^ƒCƒ}
+        // ã‚¿ã‚¤ãƒ
         private System.Windows.Forms.Timer _timer = new System.Windows.Forms.Timer { Interval = 2000 };
         private System.Windows.Forms.Timer _helpAutoHide = new System.Windows.Forms.Timer { Interval = 4000 };
 
@@ -30,19 +31,19 @@ namespace Q4Sender
 
         public Form1()
         {
-            InitializeComponent(); // Designer —L–³‚Ç‚¿‚ç‚Å‚àOKiŒã‚Åã‘‚«j
+            InitializeComponent(); // Designer æœ‰ç„¡ã©ã¡ã‚‰ã§ã‚‚OKï¼ˆå¾Œã§ä¸Šæ›¸ãï¼‰
             Text = "Q4Sender";
             StartPosition = FormStartPosition.CenterScreen;
 
-            // ==== ‰ŠúƒTƒCƒYF¬‚³‚ßiˆÈ‘O‚Ì 900x700 ‚æ‚è ‚³‚ç‚É¬‚³‚­j====
-            Width = 480; Height = 360;  // ‚²—v–]’Ê‚èA”¼•ªˆÈ‰º‚ÌƒTƒCƒYŠ´
+            // ==== åˆæœŸã‚µã‚¤ã‚ºï¼šå°ã•ã‚ï¼ˆä»¥å‰ã® 900x700 ã‚ˆã‚Š ã•ã‚‰ã«å°ã•ãï¼‰====
+            Width = 480; Height = 360;  // ã”è¦æœ›é€šã‚Šã€åŠåˆ†ä»¥ä¸‹ã®ã‚µã‚¤ã‚ºæ„Ÿ
 
             KeyPreview = true;
 
-            // ‚¢‚Á‚½‚ñ Designer ‚ÌƒRƒ“ƒgƒ[ƒ‹‚ğƒNƒŠƒAiƒNƒŠ[ƒ“‚É\¬j
+            // ã„ã£ãŸã‚“ Designer ã®ã‚³ãƒ³ãƒˆãƒ­ãƒ¼ãƒ«ã‚’ã‚¯ãƒªã‚¢ï¼ˆã‚¯ãƒªãƒ¼ãƒ³ã«æ§‹æˆï¼‰
             Controls.Clear();
 
-            // ‰æ‘œ•\¦—Ìˆæ
+            // ç”»åƒè¡¨ç¤ºé ˜åŸŸ
             _pictureBox = new PictureBox
             {
                 Dock = DockStyle.Fill,
@@ -52,10 +53,10 @@ namespace Q4Sender
             Controls.Add(_pictureBox);
             _pictureBox.BringToFront();
 
-            // ƒwƒ‹ƒvƒI[ƒo[ƒŒƒCi”¼“§–¾j
+            // ãƒ˜ãƒ«ãƒ—ã‚ªãƒ¼ãƒãƒ¼ãƒ¬ã‚¤ï¼ˆåŠé€æ˜ï¼‰
             _helpOverlay = new Panel
             {
-                BackColor = Color.FromArgb(180, 15, 23, 42), // ”¼“§–¾ƒ_[ƒNi#0F172Aj
+                BackColor = Color.FromArgb(180, 15, 23, 42), // åŠé€æ˜ãƒ€ãƒ¼ã‚¯ï¼ˆ#0F172Aï¼‰
                 Padding = new Padding(10),
                 AutoSize = true,
                 AutoSizeMode = AutoSizeMode.GrowAndShrink
@@ -66,32 +67,46 @@ namespace Q4Sender
                 AutoSize = true,
                 Font = new Font(SystemFonts.DefaultFont.FontFamily, 9f, FontStyle.Regular),
                 Text =
-@"‘€ì:
-  Ctrl+O : ƒtƒ@ƒCƒ‹‚ğŠJ‚­i”CˆÓƒtƒ@ƒCƒ‹ or Q4sƒeƒLƒXƒgj
-  Space  : ˆê’â~/ÄŠJ
-  F      : ‘S‰æ–ÊØ‘Ö
-  © / ¨  : ‘O / Ÿ
-  Esc    : I—¹
-  F1     : ƒwƒ‹ƒv•\¦"
+            _progressLabel = new Label
+            {
+                AutoSize = true,
+                ForeColor = Color.White,
+                BackColor = Color.FromArgb(180, 15, 23, 42),
+                Font = new Font(SystemFonts.DefaultFont.FontFamily, 10f, FontStyle.Bold),
+                Padding = new Padding(8, 4, 8, 4),
+                Visible = false
+            };
+            Controls.Add(_progressLabel);
+            _progressLabel.BringToFront();
+
+            Resize += (s, e) => UpdateProgressLabelPosition();
+
+@"æ“ä½œ:
+  Ctrl+O : ãƒ•ã‚¡ã‚¤ãƒ«ã‚’é–‹ãï¼ˆä»»æ„ãƒ•ã‚¡ã‚¤ãƒ« or Q4è¡Œãƒ†ã‚­ã‚¹ãƒˆï¼‰
+  Space  : ä¸€æ™‚åœæ­¢/å†é–‹
+  F      : å…¨ç”»é¢åˆ‡æ›¿
+  â† / â†’  : å‰ / æ¬¡
+  Esc    : çµ‚äº†
+  F1     : ãƒ˜ãƒ«ãƒ—è¡¨ç¤º"
             };
             _helpOverlay.Controls.Add(_helpLabel);
             Controls.Add(_helpOverlay);
 
-            // ”z’ui¶ã‚É­‚µ—]”’‚ğ‹ó‚¯‚éj
+            // é…ç½®ï¼ˆå·¦ä¸Šã«å°‘ã—ä½™ç™½ã‚’ç©ºã‘ã‚‹ï¼‰
             _helpOverlay.Left = 10;
             _helpOverlay.Top = 10;
             _helpOverlay.BringToFront();
-            _helpOverlay.Visible = true; // ‹N“®‚Í•\¦
+            _helpOverlay.Visible = true; // èµ·å‹•æ™‚ã¯è¡¨ç¤º
 
-            // ©“®”ñ•\¦ƒ^ƒCƒ}i4•bj
+            // è‡ªå‹•éè¡¨ç¤ºã‚¿ã‚¤ãƒï¼ˆ4ç§’ï¼‰
             _helpAutoHide.Tick += (s, e) => { _helpAutoHide.Stop(); _helpOverlay.Visible = false; };
             _helpAutoHide.Start();
 
-            // ‚¿‚ç‚Â‚«’áŒ¸
+            // ã¡ã‚‰ã¤ãä½æ¸›
             this.DoubleBuffered = true;
             this.BackColor = Color.White;
 
-            // ƒCƒxƒ“ƒg
+            // ã‚¤ãƒ™ãƒ³ãƒˆ
             _timer.Tick += (s, e) => ShowNext();
             KeyDown += Form1_KeyDown;
 
@@ -101,7 +116,7 @@ namespace Q4Sender
             };
         }
 
-        // ========= ƒL[‘€ì =========
+        // ========= ã‚­ãƒ¼æ“ä½œ =========
         private void Form1_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.KeyCode == Keys.Escape) Close();
@@ -110,11 +125,11 @@ namespace Q4Sender
                 _paused = !_paused;
                 if (_paused) _timer.Stop(); else _timer.Start();
             }
-            else if (e.Control && e.KeyCode == Keys.O) LoadAny();         // ”CˆÓƒtƒ@ƒCƒ‹ or Q4ƒeƒLƒXƒg
-            else if (e.KeyCode == Keys.F) ToggleFullScreen();             // ‘S‰æ–Ê
-            else if (e.KeyCode == Keys.Right) ShowNext();                 // Ÿ‚Ö
-            else if (e.KeyCode == Keys.Left) ShowPrev();                  // ‘O‚Ö
-            else if (e.KeyCode == Keys.F1) ShowHelpOverlay();             // ƒwƒ‹ƒvÄ•\¦
+            else if (e.Control && e.KeyCode == Keys.O) LoadAny();         // ä»»æ„ãƒ•ã‚¡ã‚¤ãƒ« or Q4ãƒ†ã‚­ã‚¹ãƒˆ
+            else if (e.KeyCode == Keys.F) ToggleFullScreen();             // å…¨ç”»é¢
+            else if (e.KeyCode == Keys.Right) ShowNext();                 // æ¬¡ã¸
+            else if (e.KeyCode == Keys.Left) ShowPrev();                  // å‰ã¸
+            else if (e.KeyCode == Keys.F1) ShowHelpOverlay();             // ãƒ˜ãƒ«ãƒ—å†è¡¨ç¤º
         }
 
         private void ShowHelpOverlay()
@@ -122,7 +137,7 @@ namespace Q4Sender
             _helpOverlay.Visible = true;
             _helpOverlay.BringToFront();
             _helpAutoHide.Stop();
-            _helpAutoHide.Start(); // 4•bŒã‚É©“®‚ÅÁ‚¦‚é
+            _helpAutoHide.Start(); // 4ç§’å¾Œã«è‡ªå‹•ã§æ¶ˆãˆã‚‹
         }
 
         private void ToggleFullScreen()
@@ -145,19 +160,19 @@ namespace Q4Sender
             }
         }
 
-        // ========= “Ç‚İ‚İi”CˆÓƒtƒ@ƒCƒ‹ or Šù¬Q4ƒeƒLƒXƒgj =========
+        // ========= èª­ã¿è¾¼ã¿ï¼ˆä»»æ„ãƒ•ã‚¡ã‚¤ãƒ« or æ—¢æˆQ4ãƒ†ã‚­ã‚¹ãƒˆï¼‰ =========
         private void LoadAny()
         {
             using var ofd = new OpenFileDialog
             {
-                Filter = "‚·‚×‚Ä‚Ìƒtƒ@ƒCƒ‹|*.*",
-                Title = "‘—M‚·‚éƒtƒ@ƒCƒ‹‚ğ‘I‘ği”CˆÓj^‚Ü‚½‚ÍQ4ƒeƒLƒXƒg‚ğ‘I‘ğ"
+                Filter = "ã™ã¹ã¦ã®ãƒ•ã‚¡ã‚¤ãƒ«|*.*",
+                Title = "é€ä¿¡ã™ã‚‹ãƒ•ã‚¡ã‚¤ãƒ«ã‚’é¸æŠï¼ˆä»»æ„ï¼‰ï¼ã¾ãŸã¯Q4ãƒ†ã‚­ã‚¹ãƒˆã‚’é¸æŠ"
             };
             if (ofd.ShowDialog(this) != DialogResult.OK) return;
 
             var path = ofd.FileName;
 
-            // ‚Ü‚¸uQ4ƒeƒLƒXƒgv‚Æ‚µ‚Ä“Ç‚ß‚é‚©Œy‚­”»’è
+            // ã¾ãšã€ŒQ4ãƒ†ã‚­ã‚¹ãƒˆã€ã¨ã—ã¦èª­ã‚ã‚‹ã‹è»½ãåˆ¤å®š
             string[] asTextQ4 = Array.Empty<string>();
             try
             {
@@ -167,12 +182,12 @@ namespace Q4Sender
                                .Where(l => l.StartsWith("Q4|", StringComparison.OrdinalIgnoreCase))
                                .ToArray();
             }
-            catch { /* ƒoƒCƒiƒŠ“™‚Å¸”s‚µ‚Ä‚àOK */ }
+            catch { /* ãƒã‚¤ãƒŠãƒªç­‰ã§å¤±æ•—ã—ã¦ã‚‚OK */ }
 
             if (asTextQ4.Length > 0)
             {
                 _lines = asTextQ4;
-                Text = $"Q4Sender - Šù¬Q4s {_lines.Length} –‡";
+                Text = $"Q4Sender - æ—¢æˆQ4è¡Œ {_lines.Length} æš";
             }
             else
             {
@@ -180,19 +195,19 @@ namespace Q4Sender
                 {
                     var (packed, sid) = PackFileToQ4Lines(path, payloadLen: 700);
                     _lines = packed;
-                    Text = $"Q4Sender - SID={sid} ¶¬ {_lines.Length} –‡";
+                    Text = $"Q4Sender - SID={sid} ç”Ÿæˆ {_lines.Length} æš";
 
-                    // ¶¬Œ‹‰Ê‚ğ .q4.txt ‚Æ‚µ‚Ä‘‚«o‚µi”CˆÓj
+                    // ç”Ÿæˆçµæœã‚’ .q4.txt ã¨ã—ã¦æ›¸ãå‡ºã—ï¼ˆä»»æ„ï¼‰
                     try
                     {
                         var outTxt = Path.ChangeExtension(path, ".q4.txt");
                         File.WriteAllLines(outTxt, _lines, new UTF8Encoding(false));
                     }
-                    catch { /* –³‹ */ }
+                    catch { /* ç„¡è¦– */ }
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show(this, "ƒpƒbƒLƒ“ƒO‚É¸”s‚µ‚Ü‚µ‚½: " + ex.Message, "Q4Sender",
+                    MessageBox.Show(this, "ãƒ‘ãƒƒã‚­ãƒ³ã‚°ã«å¤±æ•—ã—ã¾ã—ãŸ: " + ex.Message, "Q4Sender",
                         MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return;
                 }
@@ -204,7 +219,7 @@ namespace Q4Sender
             ShowCurrent();
         }
 
-        // ========= •\¦§Œä =========
+        // ========= è¡¨ç¤ºåˆ¶å¾¡ =========
         private void ShowNext()
         {
             if (_lines.Length == 0) return;
@@ -226,14 +241,42 @@ namespace Q4Sender
             {
                 var line = _lines[_idx];
 
-                // QRCoder ‚Å¶¬iŒë‚è’ù³ Q „§ / M ‚Å‚à‰Âj
-                using var gen = new QRCodeGenerator();
-                var data = gen.CreateQrCode(line, QRCodeGenerator.ECCLevel.Q,
-                                            forceUtf8: true, utf8BOM: false, EciMode.Utf8);
+                if (_lines.Length > 0)
+                {
+                    _progressLabel.Text = $"{_idx + 1} / {_lines.Length}";
+                    _progressLabel.Visible = true;
+                    UpdateProgressLabelPosition();
+                }
+                else
+                {
+                    _progressLabel.Visible = false;
+                }
 
-                using var qr = new QRCode(data);
-                using var bmp = qr.GetGraphic(
-                    pixelsPerModule: 16,       // ¬‚³‚ßƒEƒBƒ“ƒhƒE‚Å‚àŒ©‚â‚·‚¢‚æ‚¤‘å‚«‚ß
+
+        private void UpdateProgressLabelPosition()
+        {
+            if (_progressLabel == null || !_progressLabel.Visible) return;
+
+            const int margin = 10;
+            _progressLabel.Left = Math.Max(margin, ClientSize.Width - _progressLabel.Width - margin);
+            _progressLabel.Top = Math.Max(margin, ClientSize.Height - _progressLabel.Height - margin);
+            _progressLabel.BringToFront();
+        }
+
+        // CÓƒt@C  zip  Base64URL  Å’è’·  Q4s
+            // zipk
+            byte[] zipped;
+                using (var zip = new ZipArchive(msOut, ZipArchiveMode.Create, leaveOpen: true))
+                {
+                    var entryName = Path.GetFileName(filePath);
+                    if (string.IsNullOrEmpty(entryName)) entryName = "data";
+                    var entry = zip.CreateEntry(entryName, CompressionLevel.Optimal);
+                    using var entryStream = entry.Open();
+                    entryStream.Write(raw, 0, raw.Length);
+                }
+                zipped = msOut.ToArray();
+            var b64u = Base64UrlNoPad(zipped);
+                    pixelsPerModule: 16,       // å°ã•ã‚ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã§ã‚‚è¦‹ã‚„ã™ã„ã‚ˆã†å¤§ãã‚
                     Color.Black,
                     Color.White,
                     drawQuietZones: true);
@@ -242,27 +285,27 @@ namespace Q4Sender
                 _pictureBox.Image?.Dispose();
                 _pictureBox.Image = (Bitmap)bmp.Clone();
 
-                // ƒ^ƒCƒgƒ‹‚ÍT‚¦‚ß‚Éid‚­‚µ‚È‚¢j
+                // ã‚¿ã‚¤ãƒˆãƒ«ã¯æ§ãˆã‚ã«ï¼ˆé‡ãã—ãªã„ï¼‰
                 // Text = $"Q4Sender - {(_idx + 1)}/{_lines.Length} - {DateTime.Now:T}";
             }
             catch (Exception ex)
             {
                 _timer.Stop();
-                MessageBox.Show(this, "QR¶¬E•`‰æ‚ÅƒGƒ‰[: " + ex.Message, "Q4Sender",
+                MessageBox.Show(this, "QRç”Ÿæˆãƒ»æç”»ã§ã‚¨ãƒ©ãƒ¼: " + ex.Message, "Q4Sender",
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
-        // ========= ƒpƒbƒJ[i”CˆÓƒtƒ@ƒCƒ‹ ¨ Q4sj =========
+        // ========= ãƒ‘ãƒƒã‚«ãƒ¼ï¼ˆä»»æ„ãƒ•ã‚¡ã‚¤ãƒ« â†’ Q4è¡Œï¼‰ =========
 
-        // Base64URLi= ‚Æ––”öƒpƒfƒBƒ“ƒOœ‹j
+        // Base64URLï¼ˆ= ã¨æœ«å°¾ãƒ‘ãƒ‡ã‚£ãƒ³ã‚°é™¤å»ï¼‰
         private static string Base64UrlNoPad(byte[] bytes)
         {
             var s = Convert.ToBase64String(bytes).Replace('+', '-').Replace('/', '_').TrimEnd('=');
             return s;
         }
 
-        // 3•¶š‚Ì Base36 SID
+        // 3æ–‡å­—ã® Base36 SID
         private static string MakeSid(int len = 3)
         {
             const string chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -273,15 +316,15 @@ namespace Q4Sender
             return sb.ToString();
         }
 
-        // ”CˆÓƒtƒ@ƒCƒ‹ ¨ gzip ¨ Base64URL ¨ ŒÅ’è’·•ªŠ„ ¨ Q4s
+        // ä»»æ„ãƒ•ã‚¡ã‚¤ãƒ« â†’ gzip â†’ Base64URL â†’ å›ºå®šé•·åˆ†å‰² â†’ Q4è¡Œ
         private static (string[] lines, string sid) PackFileToQ4Lines(string filePath, int payloadLen = 700, string? sid = null)
         {
             sid ??= MakeSid(3);
 
-            // “Ç‚İ‚İiƒoƒCƒiƒŠOKj
+            // èª­ã¿è¾¼ã¿ï¼ˆãƒã‚¤ãƒŠãƒªOKï¼‰
             byte[] raw = File.ReadAllBytes(filePath);
 
-            // gzipˆ³k
+            // gzipåœ§ç¸®
             byte[] gz;
             using (var msOut = new MemoryStream())
             {
@@ -290,17 +333,17 @@ namespace Q4Sender
                 gz = msOut.ToArray();
             }
 
-            // Base64URLiƒpƒfƒBƒ“ƒO–³j
+            // Base64URLï¼ˆãƒ‘ãƒ‡ã‚£ãƒ³ã‚°ç„¡ï¼‰
             var b64u = Base64UrlNoPad(gz);
 
-            // •ªŠ„
+            // åˆ†å‰²
             var parts = Enumerable.Range(0, (int)Math.Ceiling(b64u.Length / (double)payloadLen))
                                   .Select(i => b64u.Substring(i * payloadLen, Math.Min(payloadLen, b64u.Length - i * payloadLen)))
                                   .ToArray();
             int tot = parts.Length;
-            if (tot < 1 || tot > 0xFFFF) throw new InvalidOperationException("•ªŠ„”‚ª”ÍˆÍŠO‚Å‚·");
+            if (tot < 1 || tot > 0xFFFF) throw new InvalidOperationException("åˆ†å‰²æ•°ãŒç¯„å›²å¤–ã§ã™");
 
-            // Q4siidx/tot ‚Í16ij
+            // Q4è¡Œï¼ˆidx/tot ã¯16é€²ï¼‰
             var lines = parts.Select((p, i) => $"Q4|{(i + 1).ToString("X")}/{tot.ToString("X")}|{sid}|{p}")
                              .ToArray();
 
