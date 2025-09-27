@@ -47,11 +47,10 @@ namespace Q4Sender
             var layout = new TableLayoutPanel
             {
                 ColumnCount = 1,
-                RowCount = 2,
+                RowCount = 1,
                 Dock = DockStyle.Fill,
             };
             layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             Controls.Add(layout);
 
             // 画像表示領域
@@ -62,16 +61,6 @@ namespace Q4Sender
                 BackColor = Color.White
             };
             layout.Controls.Add(_pictureBox, 0, 0);
-
-            // カウンタ表示行
-            var counterPanel = new Panel
-            {
-                AutoSize = true,
-                AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                Dock = DockStyle.Fill,
-                Padding = new Padding(0, 0, 10, 10)
-            };
-            layout.Controls.Add(counterPanel, 0, 1);
 
             // ヘルプオーバーレイ（半透明）
             _helpOverlay = new Panel
@@ -107,16 +96,17 @@ namespace Q4Sender
                 Font = new Font(SystemFonts.DefaultFont.FontFamily, 10f, FontStyle.Bold),
                 Padding = new Padding(10, 6, 10, 6),
                 Text = "0 / 0",
-                Dock = DockStyle.Right,
                 TextAlign = ContentAlignment.MiddleRight
             };
-            counterPanel.Controls.Add(_counterLabel);
+            Controls.Add(_counterLabel);
+            _counterLabel.BringToFront();
 
             // 配置（左上・右下に余白を空ける）
             _helpOverlay.Left = 10;
             _helpOverlay.Top = 10;
             _helpOverlay.BringToFront();
             _helpOverlay.Visible = true; // 起動時は表示
+            UpdateCounterLabelPosition();
 
             // 自動非表示タイマ（4秒）
             _helpAutoHide.Tick += (s, e) => { _helpAutoHide.Stop(); _helpOverlay.Visible = false; };
@@ -129,6 +119,7 @@ namespace Q4Sender
             // イベント
             _timer.Tick += (s, e) => ShowNext();
             KeyDown += Form1_KeyDown;
+            Resize += (s, e) => UpdateCounterLabelPosition();
 
             Shown += (s, e) =>
             {
@@ -367,6 +358,22 @@ namespace Q4Sender
             {
                 _counterLabel.Text = $"{_idx + 1} / {_lines.Length}";
             }
+
+            UpdateCounterLabelPosition();
+        }
+
+        private void UpdateCounterLabelPosition()
+        {
+            if (_counterLabel == null) return;
+
+            const int marginRight = 20;
+            const int marginBottom = 50;
+
+            int x = Math.Max(10, ClientSize.Width - _counterLabel.Width - marginRight);
+            int y = Math.Max(10, ClientSize.Height - _counterLabel.Height - marginBottom);
+
+            _counterLabel.Location = new Point(x, y);
+            _counterLabel.BringToFront();
         }
     }
 }
