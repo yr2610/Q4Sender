@@ -43,6 +43,17 @@ namespace Q4Sender
             // いったん Designer のコントロールをクリア（クリーンに構成）
             Controls.Clear();
 
+            // レイアウト全体（QRとカウンタ行）
+            var layout = new TableLayoutPanel
+            {
+                ColumnCount = 1,
+                RowCount = 2,
+                Dock = DockStyle.Fill,
+            };
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            Controls.Add(layout);
+
             // 画像表示領域
             _pictureBox = new PictureBox
             {
@@ -50,8 +61,17 @@ namespace Q4Sender
                 SizeMode = PictureBoxSizeMode.Zoom,
                 BackColor = Color.White
             };
-            Controls.Add(_pictureBox);
-            _pictureBox.BringToFront();
+            layout.Controls.Add(_pictureBox, 0, 0);
+
+            // カウンタ表示行
+            var counterPanel = new Panel
+            {
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Dock = DockStyle.Fill,
+                Padding = new Padding(0, 0, 10, 10)
+            };
+            layout.Controls.Add(counterPanel, 0, 1);
 
             // ヘルプオーバーレイ（半透明）
             _helpOverlay = new Panel
@@ -87,19 +107,16 @@ namespace Q4Sender
                 Font = new Font(SystemFonts.DefaultFont.FontFamily, 10f, FontStyle.Bold),
                 Padding = new Padding(10, 6, 10, 6),
                 Text = "0 / 0",
-                Anchor = AnchorStyles.Bottom | AnchorStyles.Right
+                Dock = DockStyle.Right,
+                TextAlign = ContentAlignment.MiddleRight
             };
-            Controls.Add(_counterLabel);
+            counterPanel.Controls.Add(_counterLabel);
 
             // 配置（左上・右下に余白を空ける）
             _helpOverlay.Left = 10;
             _helpOverlay.Top = 10;
             _helpOverlay.BringToFront();
             _helpOverlay.Visible = true; // 起動時は表示
-
-            _counterLabel.Left = ClientSize.Width - _counterLabel.Width - 10;
-            _counterLabel.Top = ClientSize.Height - _counterLabel.Height - 10;
-            _counterLabel.BringToFront();
 
             // 自動非表示タイマ（4秒）
             _helpAutoHide.Tick += (s, e) => { _helpAutoHide.Stop(); _helpOverlay.Visible = false; };
@@ -118,8 +135,6 @@ namespace Q4Sender
                 _pictureBox.BackColor = Color.White;
                 UpdateCounterLabel();
             };
-
-            Resize += (s, e) => PositionCounterLabel();
         }
 
         // ========= キー操作 =========
@@ -352,17 +367,6 @@ namespace Q4Sender
             {
                 _counterLabel.Text = $"{_idx + 1} / {_lines.Length}";
             }
-
-            PositionCounterLabel();
-        }
-
-        private void PositionCounterLabel()
-        {
-            if (_counterLabel == null) return;
-
-            _counterLabel.Left = Math.Max(10, ClientSize.Width - _counterLabel.Width - 10);
-            _counterLabel.Top = Math.Max(10, ClientSize.Height - _counterLabel.Height - 10);
-            _counterLabel.BringToFront();
         }
     }
 }
