@@ -27,6 +27,7 @@ namespace Q4Sender
         private PictureBox _pictureBox;
         private Panel _helpOverlay;
         private Label _helpLabel;
+        private Label _counterLabel;
 
         public Form1()
         {
@@ -77,11 +78,28 @@ namespace Q4Sender
             _helpOverlay.Controls.Add(_helpLabel);
             Controls.Add(_helpOverlay);
 
-            // 配置（左上に少し余白を空ける）
+            // QR番号表示用ラベル
+            _counterLabel = new Label
+            {
+                AutoSize = true,
+                ForeColor = Color.White,
+                BackColor = Color.FromArgb(180, 15, 23, 42),
+                Font = new Font(SystemFonts.DefaultFont.FontFamily, 10f, FontStyle.Bold),
+                Padding = new Padding(10, 6, 10, 6),
+                Text = "0 / 0",
+                Anchor = AnchorStyles.Bottom | AnchorStyles.Right
+            };
+            Controls.Add(_counterLabel);
+
+            // 配置（左上・右下に余白を空ける）
             _helpOverlay.Left = 10;
             _helpOverlay.Top = 10;
             _helpOverlay.BringToFront();
             _helpOverlay.Visible = true; // 起動時は表示
+
+            _counterLabel.Left = ClientSize.Width - _counterLabel.Width - 10;
+            _counterLabel.Top = ClientSize.Height - _counterLabel.Height - 10;
+            _counterLabel.BringToFront();
 
             // 自動非表示タイマ（4秒）
             _helpAutoHide.Tick += (s, e) => { _helpAutoHide.Stop(); _helpOverlay.Visible = false; };
@@ -98,7 +116,10 @@ namespace Q4Sender
             Shown += (s, e) =>
             {
                 _pictureBox.BackColor = Color.White;
+                UpdateCounterLabel();
             };
+
+            Resize += (s, e) => PositionCounterLabel();
         }
 
         // ========= キー操作 =========
@@ -220,7 +241,11 @@ namespace Q4Sender
 
         private void ShowCurrent()
         {
-            if (_lines.Length == 0) return;
+            if (_lines.Length == 0)
+            {
+                UpdateCounterLabel();
+                return;
+            }
 
             try
             {
@@ -241,6 +266,8 @@ namespace Q4Sender
                 _pictureBox.BackColor = Color.White;
                 _pictureBox.Image?.Dispose();
                 _pictureBox.Image = (Bitmap)bmp.Clone();
+
+                UpdateCounterLabel();
 
                 // タイトルは控えめに（重くしない）
                 // Text = $"Q4Sender - {(_idx + 1)}/{_lines.Length} - {DateTime.Now:T}";
@@ -273,7 +300,7 @@ namespace Q4Sender
             return sb.ToString();
         }
 
-        // 任意ファイル → gzip → Base64URL → 固定長分割 → Q4行
+        // 任意ファイル → zip（単一エントリ）→ Base64URL → 固定長分割 → Q4行
         private static (string[] lines, string sid) PackFileToQ4Lines(string filePath, int payloadLen = 700, string? sid = null)
         {
             sid ??= MakeSid(3);
@@ -281,17 +308,23 @@ namespace Q4Sender
             // 読み込み（バイナリOK）
             byte[] raw = File.ReadAllBytes(filePath);
 
-            // gzip圧縮
-            byte[] gz;
+            // zip圧縮（ディレクトリ無し、1ファイル）
+            byte[] zipped;
             using (var msOut = new MemoryStream())
             {
-                using (var gzStream = new GZipStream(msOut, CompressionLevel.Optimal, leaveOpen: true))
-                    gzStream.Write(raw, 0, raw.Length);
-                gz = msOut.ToArray();
+                using (var zip = new ZipArchive(msOut, ZipArchiveMode.Create, leaveOpen: true))
+                {
+                    var entryName = Path.GetFileName(filePath);
+                    if (string.IsNullOrEmpty(entryName)) entryName = "payload";
+                    var entry = zip.CreateEntry(entryName, CompressionLevel.Optimal);
+                    using var entryStream = entry.Open();
+                    entryStream.Write(raw, 0, raw.Length);
+                }
+                zipped = msOut.ToArray();
             }
 
             // Base64URL（パディング無）
-            var b64u = Base64UrlNoPad(gz);
+            var b64u = Base64UrlNoPad(zipped);
 
             // 分割
             var parts = Enumerable.Range(0, (int)Math.Ceiling(b64u.Length / (double)payloadLen))
@@ -305,6 +338,31 @@ namespace Q4Sender
                              .ToArray();
 
             return (lines, sid);
+        }
+
+        private void UpdateCounterLabel()
+        {
+            if (_counterLabel == null) return;
+
+            if (_lines.Length == 0)
+            {
+                _counterLabel.Text = "0 / 0";
+            }
+            else
+            {
+                _counterLabel.Text = $"{_idx + 1} / {_lines.Length}";
+            }
+
+            PositionCounterLabel();
+        }
+
+        private void PositionCounterLabel()
+        {
+            if (_counterLabel == null) return;
+
+            _counterLabel.Left = Math.Max(10, ClientSize.Width - _counterLabel.Width - 10);
+            _counterLabel.Top = Math.Max(10, ClientSize.Height - _counterLabel.Height - 10);
+            _counterLabel.BringToFront();
         }
     }
 }
