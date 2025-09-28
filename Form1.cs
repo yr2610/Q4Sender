@@ -14,6 +14,16 @@ namespace Q4Sender
     public partial class Form1 : Form
     {
         // ---- 状態 ----
+        private const int DefaultPayloadLength = 700;
+        private const int MaxQrByteCapacity = 2953; // Version40-L（Byteモード）の上限
+        private const int QrLineOverheadWorstCase = 17; // "Q4|FFFF/FFFF|SID|" の最大オーバーヘッド
+
+        private readonly AppConfig _config;
+        private readonly QRCodeGenerator.ECCLevel _effectiveEccLevel;
+        private readonly string? _invalidEccValue;
+        private bool _eccWarningShown;
+        private int? _configuredVersion;
+        private bool _versionFallbackMessageShown;
         private string[] _lines = Array.Empty<string>();
         private int _idx = 0;
         private bool _paused = false;
@@ -31,6 +41,31 @@ namespace Q4Sender
 
         public Form1()
         {
+            try
+            {
+                _config = AppConfig.Load(Path.Combine(AppContext.BaseDirectory, "conf.yaml"));
+            }
+            catch
+            {
+                _config = AppConfig.CreateDefault();
+            }
+
+            var eccSetting = _config.QrSettings.ErrorCorrectionLevel;
+            if (!string.IsNullOrWhiteSpace(eccSetting) &&
+                Enum.TryParse(eccSetting.Trim(), true, out QRCodeGenerator.ECCLevel parsedEcc))
+            {
+                _effectiveEccLevel = parsedEcc;
+                _invalidEccValue = null;
+            }
+            else
+            {
+                _effectiveEccLevel = QRCodeGenerator.ECCLevel.Q;
+                var trimmed = eccSetting?.Trim();
+                _invalidEccValue = string.IsNullOrWhiteSpace(trimmed) ? null : trimmed;
+            }
+
+            _configuredVersion = _config.QrSettings.Version;
+
             InitializeComponent(); // Designer 有無どちらでもOK（後で上書き）
             Text = "Q4Sender";
             StartPosition = FormStartPosition.CenterScreen;
@@ -211,9 +246,15 @@ namespace Q4Sender
             {
                 try
                 {
-                    var (packed, sid) = PackFileToQ4Lines(path, payloadLen: 700);
+                    var payloadLen = DeterminePayloadLength(out var configWarning);
+                    var (packed, sid) = PackFileToQ4Lines(path, payloadLen: payloadLen);
                     _lines = packed;
                     Text = $"Q4Sender - SID={sid} 生成 {_lines.Length} 枚";
+
+                    if (!string.IsNullOrEmpty(configWarning))
+                    {
+                        MessageBox.Show(this, configWarning, "Q4Sender", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    }
 
                     // 生成結果を .q4.txt として書き出し（任意）
                     try
@@ -259,27 +300,66 @@ namespace Q4Sender
                 return;
             }
 
+            if (_invalidEccValue != null && !_eccWarningShown)
+            {
+                MessageBox.Show(this,
+                    $"QR誤り訂正レベルの設定値 '{_invalidEccValue}' は無効です。既定値(Q)を使用します。",
+                    "Q4Sender", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                _eccWarningShown = true;
+            }
+
             try
             {
                 var line = _lines[_idx];
 
                 // QRCoder で生成（誤り訂正 Q 推奨 / M でも可）
                 using var gen = new QRCodeGenerator();
-                var data = gen.CreateQrCode(line, QRCodeGenerator.ECCLevel.Q,
-                                            forceUtf8: true, utf8BOM: false, EciMode.Utf8);
+                var requestedVersion = _configuredVersion ?? -1;
 
-                using var qr = new QRCode(data);
-                using var bmp = qr.GetGraphic(
-                    pixelsPerModule: 16,       // 小さめウィンドウでも見やすいよう大きめ
-                    Color.Black,
-                    Color.White,
-                    drawQuietZones: true);
+                QRCodeData? data = null;
+                try
+                {
+                    data = gen.CreateQrCode(line, _effectiveEccLevel,
+                        forceUtf8: true, utf8BOM: false, EciMode.Utf8,
+                        requestedVersion: requestedVersion);
+                }
+                catch (DataTooLongException) when (_configuredVersion != null)
+                {
+                    var failedVersion = _configuredVersion.Value;
+                    if (!_versionFallbackMessageShown)
+                    {
+                        MessageBox.Show(this,
+                            $"QRバージョン {failedVersion} の設定ではコンテンツを収容できません。自動サイズに戻して再生成します。",
+                            "Q4Sender", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        _versionFallbackMessageShown = true;
+                    }
 
-                _pictureBox.BackColor = Color.White;
-                _pictureBox.Image?.Dispose();
-                _pictureBox.Image = (Bitmap)bmp.Clone();
+                    _configuredVersion = null;
+                    data = gen.CreateQrCode(line, _effectiveEccLevel,
+                        forceUtf8: true, utf8BOM: false, EciMode.Utf8,
+                        requestedVersion: -1);
+                }
 
-                UpdateCounterLabel();
+                if (data == null)
+                {
+                    throw new InvalidOperationException("QR コードデータの生成に失敗しました。");
+                }
+
+                using (data)
+                {
+                    using var qr = new QRCode(data);
+                    using var bmp = qr.GetGraphic(
+                        pixelsPerModule: 16,       // 小さめウィンドウでも見やすいよう大きめ
+                        Color.Black,
+                        Color.White,
+                        drawQuietZones: true);
+
+                    _pictureBox.BackColor = Color.White;
+                    _pictureBox.Image?.Dispose();
+                    _pictureBox.Image = (Bitmap)bmp.Clone();
+
+                    UpdateCounterLabel();
+                }
 
                 // タイトルは控えめに（重くしない）
                 // Text = $"Q4Sender - {(_idx + 1)}/{_lines.Length} - {DateTime.Now:T}";
@@ -313,8 +393,13 @@ namespace Q4Sender
         }
 
         // 任意ファイル → zip（単一エントリ）→ Base64URL → 固定長分割 → Q4行
-        private static (string[] lines, string sid) PackFileToQ4Lines(string filePath, int payloadLen = 700, string? sid = null)
+        private static (string[] lines, string sid) PackFileToQ4Lines(string filePath, int payloadLen = DefaultPayloadLength, string? sid = null)
         {
+            if (payloadLen <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(payloadLen));
+            }
+
             sid ??= MakeSid(3);
 
             // 読み込み（バイナリOK）
@@ -350,6 +435,78 @@ namespace Q4Sender
                              .ToArray();
 
             return (lines, sid);
+        }
+
+        private int DeterminePayloadLength(out string? warningMessage)
+        {
+            warningMessage = null;
+
+            var requestedVersion = _configuredVersion ?? -1;
+            var capacity = TryGetMaxQrCapacity(_effectiveEccLevel, requestedVersion);
+
+            if (!capacity.HasValue || capacity.Value <= QrLineOverheadWorstCase)
+            {
+                if (_configuredVersion.HasValue)
+                {
+                    var failedVersion = _configuredVersion.Value;
+                    _configuredVersion = null;
+
+                    if (!_versionFallbackMessageShown)
+                    {
+                        warningMessage =
+                            $"QRバージョン {failedVersion} の設定ではデータを格納できません。自動サイズに戻して再生成します。";
+                        _versionFallbackMessageShown = true;
+                    }
+
+                    var autoCapacity = TryGetMaxQrCapacity(_effectiveEccLevel, -1);
+                    if (autoCapacity.HasValue && autoCapacity.Value > QrLineOverheadWorstCase)
+                    {
+                        return Math.Max(1, autoCapacity.Value - QrLineOverheadWorstCase);
+                    }
+                }
+
+                return DefaultPayloadLength;
+            }
+
+            return Math.Max(1, capacity.Value - QrLineOverheadWorstCase);
+        }
+
+        private static int? TryGetMaxQrCapacity(QRCodeGenerator.ECCLevel eccLevel, int requestedVersion)
+        {
+            if (requestedVersion != -1 && (requestedVersion < 1 || requestedVersion > 40))
+            {
+                return null;
+            }
+
+            using var generator = new QRCodeGenerator();
+            var low = 0;
+            var high = MaxQrByteCapacity;
+            var best = 0;
+
+            while (low <= high)
+            {
+                var mid = (low + high) / 2;
+                QRCodeData? data = null;
+
+                try
+                {
+                    data = generator.CreateQrCode(new string('A', mid), eccLevel,
+                        forceUtf8: true, utf8BOM: false, EciMode.Utf8,
+                        requestedVersion: requestedVersion);
+                    best = mid;
+                    low = mid + 1;
+                }
+                catch (DataTooLongException)
+                {
+                    high = mid - 1;
+                }
+                finally
+                {
+                    data?.Dispose();
+                }
+            }
+
+            return best;
         }
 
         private void UpdateCounterLabel()
