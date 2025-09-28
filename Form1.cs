@@ -323,7 +323,7 @@ namespace Q4Sender
                         forceUtf8: true, utf8BOM: false, EciMode.Utf8,
                         requestedVersion: requestedVersion);
                 }
-                catch (DataTooLongException) when (_configuredVersion != null)
+                catch (QRCoder.Exceptions.DataTooLongException) when (_configuredVersion != null)
                 {
                     var failedVersion = _configuredVersion.Value;
                     if (!_versionFallbackMessageShown)
@@ -496,7 +496,7 @@ namespace Q4Sender
                     best = mid;
                     low = mid + 1;
                 }
-                catch (DataTooLongException)
+                catch (QRCoder.Exceptions.DataTooLongException)
                 {
                     high = mid - 1;
                 }
