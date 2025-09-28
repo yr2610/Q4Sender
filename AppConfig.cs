@@ -28,6 +28,11 @@ public sealed class AppConfig
             ? "Q"
             : config.QrSettings.ErrorCorrectionLevel.Trim();
 
+        if (config.QrSettings.Version is int version && (version < 1 || version > 40))
+        {
+            config.QrSettings.Version = null;
+        }
+
         return config;
     }
 
