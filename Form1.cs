@@ -14,6 +14,7 @@ namespace Q4Sender
     public partial class Form1 : Form
     {
         // ---- 状態 ----
+        private readonly AppConfig _config;
         private string[] _lines = Array.Empty<string>();
         private int _idx = 0;
         private bool _paused = false;
@@ -31,6 +32,15 @@ namespace Q4Sender
 
         public Form1()
         {
+            try
+            {
+                _config = AppConfig.Load(Path.Combine(AppContext.BaseDirectory, "conf.yaml"));
+            }
+            catch
+            {
+                _config = AppConfig.CreateDefault();
+            }
+
             InitializeComponent(); // Designer 有無どちらでもOK（後で上書き）
             Text = "Q4Sender";
             StartPosition = FormStartPosition.CenterScreen;
@@ -265,8 +275,25 @@ namespace Q4Sender
 
                 // QRCoder で生成（誤り訂正 Q 推奨 / M でも可）
                 using var gen = new QRCodeGenerator();
-                var data = gen.CreateQrCode(line, QRCodeGenerator.ECCLevel.Q,
-                                            forceUtf8: true, utf8BOM: false, EciMode.Utf8);
+
+                var eccLevel = QRCodeGenerator.ECCLevel.Q;
+                var eccSetting = _config.QrSettings.ErrorCorrectionLevel;
+                if (!string.IsNullOrWhiteSpace(eccSetting))
+                {
+                    if (!Enum.TryParse(eccSetting, true, out eccLevel))
+                    {
+                        MessageBox.Show(this,
+                            $"QR誤り訂正レベルの設定値 '{eccSetting}' は無効です。既定値(Q)を使用します。",
+                            "Q4Sender", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        eccLevel = QRCodeGenerator.ECCLevel.Q;
+                    }
+                }
+
+                var requestedVersion = _config.QrSettings.Version ?? -1;
+
+                var data = gen.CreateQrCode(line, eccLevel,
+                    forceUtf8: true, utf8BOM: false, EciMode.Utf8,
+                    requestedVersion: requestedVersion);
 
                 using var qr = new QRCode(data);
                 using var bmp = qr.GetGraphic(
