@@ -30,7 +30,7 @@ namespace Q4Sender
         private bool _fullscreen = false;
 
         // タイマ
-        private System.Windows.Forms.Timer _timer = new System.Windows.Forms.Timer { Interval = 2000 };
+        private System.Windows.Forms.Timer _timer = new System.Windows.Forms.Timer { Interval = 250 };
         private System.Windows.Forms.Timer _helpAutoHide = new System.Windows.Forms.Timer { Interval = 4000 };
 
         // UI
@@ -70,8 +70,8 @@ namespace Q4Sender
             Text = "Q4Sender";
             StartPosition = FormStartPosition.CenterScreen;
 
-            // ==== 初期サイズ：小さめ（以前の 900x700 より さらに小さく）====
-            Width = 480; Height = 360;  // ご要望通り、半分以下のサイズ感
+            // ==== 初期サイズ：小さめ ====
+            Width = 480; Height = 360;
 
             KeyPreview = true;
 
