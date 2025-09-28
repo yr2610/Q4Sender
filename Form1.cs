@@ -302,10 +302,10 @@ namespace Q4Sender
 
             if (_invalidEccValue != null && !_eccWarningShown)
             {
+                _eccWarningShown = true; // 警告ダイアログが多重に開かないように先にフラグを更新
                 MessageBox.Show(this,
                     $"QR誤り訂正レベルの設定値 '{_invalidEccValue}' は無効です。既定値(Q)を使用します。",
                     "Q4Sender", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                _eccWarningShown = true;
             }
 
             try
