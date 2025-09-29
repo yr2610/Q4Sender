@@ -38,6 +38,8 @@ namespace Q4Sender
         private Panel _helpOverlay;
         private Label _helpLabel;
         private Label _counterLabel;
+        private TrackBar _seekBar;
+        private bool _suppressSeekEvent;
 
         public Form1()
         {
@@ -83,10 +85,11 @@ namespace Q4Sender
             var layout = new TableLayoutPanel
             {
                 ColumnCount = 1,
-                RowCount = 2,
+                RowCount = 3,
                 Dock = DockStyle.Fill,
             };
             layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             Controls.Add(layout);
 
@@ -98,6 +101,21 @@ namespace Q4Sender
                 BackColor = Color.White
             };
             layout.Controls.Add(_pictureBox, 0, 0);
+
+            // シークバー
+            _seekBar = new TrackBar
+            {
+                Dock = DockStyle.Fill,
+                Minimum = 0,
+                Maximum = 0,
+                TickStyle = TickStyle.None,
+                Enabled = false,
+                Margin = new Padding(20, 5, 20, 0),
+                SmallChange = 1,
+                LargeChange = 10,
+            };
+            _seekBar.Scroll += SeekBar_Scroll;
+            layout.Controls.Add(_seekBar, 0, 1);
 
             // ヘルプオーバーレイ（半透明）
             _helpOverlay = new Panel
@@ -132,7 +150,7 @@ namespace Q4Sender
                 BackColor = Color.FromArgb(180, 15, 23, 42),
                 Padding = new Padding(0, 6, 20, 6),
             };
-            layout.Controls.Add(counterPanel, 0, 1);
+            layout.Controls.Add(counterPanel, 0, 2);
 
             _counterLabel = new Label
             {
@@ -172,6 +190,8 @@ namespace Q4Sender
 
             DragEnter += Form1_DragEnter;
             DragDrop += Form1_DragDrop;
+
+            UpdateSeekBarState();
         }
 
         // ========= キー操作 =========
@@ -375,6 +395,7 @@ namespace Q4Sender
             if (_lines.Length == 0)
             {
                 UpdateCounterLabel();
+                UpdateSeekBarState();
                 return;
             }
 
@@ -437,6 +458,7 @@ namespace Q4Sender
                     _pictureBox.Image = (Bitmap)bmp.Clone();
 
                     UpdateCounterLabel();
+                    UpdateSeekBarState();
                 }
 
                 // タイトルは控えめに（重くしない）
@@ -600,6 +622,53 @@ namespace Q4Sender
                 _counterLabel.Text = $"{_idx + 1} / {_lines.Length}";
             }
 
+        }
+
+        private void UpdateSeekBarState()
+        {
+            if (_seekBar == null) return;
+
+            _suppressSeekEvent = true;
+
+            if (_lines.Length == 0)
+            {
+                _seekBar.Enabled = false;
+                _seekBar.Minimum = 0;
+                _seekBar.Maximum = 0;
+                _seekBar.Value = 0;
+            }
+            else
+            {
+                _seekBar.Enabled = true;
+                _seekBar.Minimum = 0;
+                var newMax = Math.Max(0, _lines.Length - 1);
+                if (_seekBar.Value > newMax)
+                {
+                    _seekBar.Value = newMax;
+                }
+                _seekBar.Maximum = newMax;
+                var newValue = Math.Max(_seekBar.Minimum, Math.Min(newMax, _idx));
+                if (_seekBar.Value != newValue)
+                {
+                    _seekBar.Value = newValue;
+                }
+            }
+
+            _suppressSeekEvent = false;
+        }
+
+        private void SeekBar_Scroll(object? sender, EventArgs e)
+        {
+            if (_suppressSeekEvent || _seekBar == null) return;
+
+            var newIndex = _seekBar.Value;
+            if (newIndex == _idx || _lines.Length == 0)
+            {
+                return;
+            }
+
+            _idx = newIndex;
+            ShowCurrent();
         }
 
         private void Form1_DragEnter(object? sender, DragEventArgs e)
