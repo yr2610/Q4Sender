@@ -7,6 +7,7 @@ namespace Q4Sender;
 public sealed class AppConfig
 {
     public QrSettings QrSettings { get; set; } = new();
+    public int? TimerInterval { get; set; }
 
     public static AppConfig Load(string path)
     {
@@ -33,6 +34,11 @@ public sealed class AppConfig
             config.QrSettings.Version = null;
         }
 
+        if (config.TimerInterval is int timerInterval && timerInterval < 1)
+        {
+            config.TimerInterval = null;
+        }
+
         return config;
     }
 
@@ -42,7 +48,8 @@ public sealed class AppConfig
         {
             ErrorCorrectionLevel = "Q",
             Version = null
-        }
+        },
+        TimerInterval = null
     };
 }
 

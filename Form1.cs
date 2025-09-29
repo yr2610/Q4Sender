@@ -17,6 +17,7 @@ namespace Q4Sender
         private const int DefaultPayloadLength = 700;
         private const int MaxQrByteCapacity = 2953; // Version40-L（Byteモード）の上限
         private const int QrLineOverheadWorstCase = 17; // "Q4|FFFF/FFFF|SID|" の最大オーバーヘッド
+        private const int DefaultTimerInterval = 125;
 
         private readonly AppConfig _config;
         private readonly QRCodeGenerator.ECCLevel _effectiveEccLevel;
@@ -30,7 +31,7 @@ namespace Q4Sender
         private bool _fullscreen = false;
 
         // タイマ
-        private System.Windows.Forms.Timer _timer = new System.Windows.Forms.Timer { Interval = 125 };
+        private readonly System.Windows.Forms.Timer _timer;
         private System.Windows.Forms.Timer _helpAutoHide = new System.Windows.Forms.Timer { Interval = 4000 };
 
         // UI
@@ -51,6 +52,11 @@ namespace Q4Sender
             {
                 _config = AppConfig.CreateDefault();
             }
+
+            _timer = new System.Windows.Forms.Timer
+            {
+                Interval = ResolveTimerInterval(_config.TimerInterval)
+            };
 
             var eccSetting = _config.QrSettings.ErrorCorrectionLevel;
             if (!string.IsNullOrWhiteSpace(eccSetting) &&
@@ -192,6 +198,13 @@ namespace Q4Sender
             DragDrop += Form1_DragDrop;
 
             UpdateSeekBarState();
+        }
+
+        private static int ResolveTimerInterval(int? configuredInterval)
+        {
+            return configuredInterval is int value && value >= 1
+                ? value
+                : DefaultTimerInterval;
         }
 
         // ========= キー操作 =========
