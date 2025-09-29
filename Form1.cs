@@ -74,6 +74,7 @@ namespace Q4Sender
             Width = 480; Height = 360;
 
             KeyPreview = true;
+            AllowDrop = true;
 
             // いったん Designer のコントロールをクリア（クリーンに構成）
             Controls.Clear();
@@ -114,6 +115,7 @@ namespace Q4Sender
                 Text =
 @"操作:
   Ctrl+O : ファイルを開く（任意ファイル or Q4行テキスト）
+  Drag&Drop : ファイルを開く
   Space  : 一時停止/再開
   F      : 全画面切替
   ← / →  : 前 / 次
@@ -167,6 +169,9 @@ namespace Q4Sender
                 _pictureBox.BackColor = Color.White;
                 UpdateCounterLabel();
             };
+
+            DragEnter += Form1_DragEnter;
+            DragDrop += Form1_DragDrop;
         }
 
         // ========= キー操作 =========
@@ -223,7 +228,12 @@ namespace Q4Sender
             };
             if (ofd.ShowDialog(this) != DialogResult.OK) return;
 
-            var path = ofd.FileName;
+            LoadFromPath(ofd.FileName);
+        }
+
+        private void LoadFromPath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return;
 
             // まず「Q4テキスト」として読めるか軽く判定
             string[] asTextQ4 = Array.Empty<string>();
@@ -244,9 +254,31 @@ namespace Q4Sender
             }
             else
             {
+                int payloadLen;
+                string? configWarning = null;
+
                 try
                 {
-                    var payloadLen = DeterminePayloadLength(out var configWarning);
+                    payloadLen = DeterminePayloadLength(out configWarning);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(this, "設定の読み込みに失敗しました: " + ex.Message, "Q4Sender",
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+
+                if (!TryEnsureFitsFrameLimit(path, payloadLen, out var sizeWarning))
+                {
+                    if (!string.IsNullOrEmpty(sizeWarning))
+                    {
+                        MessageBox.Show(this, sizeWarning, "Q4Sender", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    }
+                    return;
+                }
+
+                try
+                {
                     var (packed, sid) = PackFileToQ4Lines(path, payloadLen: payloadLen);
                     _lines = packed;
                     Text = $"Q4Sender - SID={sid} 生成 {_lines.Length} 枚";
@@ -276,6 +308,52 @@ namespace Q4Sender
             _paused = false;
             _timer.Start();
             ShowCurrent();
+        }
+
+        private bool TryEnsureFitsFrameLimit(string filePath, int payloadLen, out string? warningMessage)
+        {
+            warningMessage = null;
+
+            if (payloadLen <= 0)
+            {
+                warningMessage = "QR コードのペイロード長が不正です。";
+                return false;
+            }
+
+            try
+            {
+                var fi = new FileInfo(filePath);
+                if (!fi.Exists)
+                {
+                    warningMessage = "ファイルが存在しません。";
+                    return false;
+                }
+
+                var fileLength = fi.Length;
+
+                // zip圧縮+Base64 化後のサイズを安全側に見積もる（余裕を持った上限）
+                var inflatedEstimate = (double)fileLength * 2.0 + 1024.0; // 安全側に多めに見積
+                if (inflatedEstimate < 0) inflatedEstimate = double.MaxValue / 2; // 念のため
+
+                var base64Length = Math.Ceiling(inflatedEstimate / 3.0) * 4.0;
+                var estimatedFrames = double.IsInfinity(base64Length)
+                    ? (long)0x10000
+                    : (long)Math.Ceiling(base64Length / payloadLen);
+
+                if (estimatedFrames > 0xFFFF)
+                {
+                    warningMessage =
+                        $"ファイルサイズが大きすぎるため中止しました。\n推定 {estimatedFrames:N0} 枚が必要ですが、上限は 65,535 枚です。";
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                warningMessage = "ファイルサイズの確認に失敗しました: " + ex.Message;
+                return false;
+            }
+
+            return true;
         }
 
         // ========= 表示制御 =========
@@ -522,6 +600,26 @@ namespace Q4Sender
                 _counterLabel.Text = $"{_idx + 1} / {_lines.Length}";
             }
 
+        }
+
+        private void Form1_DragEnter(object? sender, DragEventArgs e)
+        {
+            if (e.Data != null && e.Data.GetDataPresent(DataFormats.FileDrop))
+            {
+                e.Effect = DragDropEffects.Copy;
+            }
+            else
+            {
+                e.Effect = DragDropEffects.None;
+            }
+        }
+
+        private void Form1_DragDrop(object? sender, DragEventArgs e)
+        {
+            if (e.Data?.GetData(DataFormats.FileDrop) is string[] files && files.Length > 0)
+            {
+                LoadFromPath(files[0]);
+            }
         }
     }
 }
