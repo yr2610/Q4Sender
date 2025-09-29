@@ -30,7 +30,7 @@ namespace Q4Sender
         private bool _fullscreen = false;
 
         // タイマ
-        private System.Windows.Forms.Timer _timer = new System.Windows.Forms.Timer { Interval = 250 };
+        private System.Windows.Forms.Timer _timer = new System.Windows.Forms.Timer { Interval = 125 };
         private System.Windows.Forms.Timer _helpAutoHide = new System.Windows.Forms.Timer { Interval = 4000 };
 
         // UI
@@ -291,8 +291,8 @@ namespace Q4Sender
                     // 生成結果を .q4.txt として書き出し（任意）
                     try
                     {
-                        var outTxt = Path.ChangeExtension(path, ".q4.txt");
-                        File.WriteAllLines(outTxt, _lines, new UTF8Encoding(false));
+                        //var outTxt = Path.ChangeExtension(path, ".q4.txt");
+                        //File.WriteAllLines(outTxt, _lines, new UTF8Encoding(false));
                     }
                     catch { /* 無視 */ }
                 }
