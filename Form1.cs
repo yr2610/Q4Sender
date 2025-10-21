@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.IO.Compression;
@@ -8,6 +9,7 @@ using System.Text;
 using System.Windows.Forms;
 using QRCoder;
 using static QRCoder.QRCodeGenerator;
+using Q4Sender.Core;
 
 namespace Q4Sender
 {
@@ -39,8 +41,16 @@ namespace Q4Sender
         private Panel _helpOverlay;
         private Label _helpLabel;
         private Label _counterLabel;
+        private Label _skipInfoLabel;
         private TrackBar _seekBar;
         private bool _suppressSeekEvent;
+        private TextBox _skipCodeTextBox;
+        private Button _skipApplyButton;
+        private readonly Queue<int> _scheduledIndices = new();
+        private int _scheduledTotal;
+        private int _scheduledSent;
+        private List<(int start, int end)> _scheduledBuckets = new();
+        private bool _skipScheduleRequested;
 
         public Form1()
         {
@@ -158,6 +168,59 @@ namespace Q4Sender
             };
             layout.Controls.Add(counterPanel, 0, 2);
 
+            var skipPanel = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Left,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                WrapContents = false,
+                BackColor = Color.Transparent,
+                FlowDirection = FlowDirection.LeftToRight,
+                Padding = new Padding(10, 0, 0, 0),
+                Margin = new Padding(0),
+            };
+            counterPanel.Controls.Add(skipPanel);
+
+            var skipLabel = new Label
+            {
+                AutoSize = true,
+                ForeColor = Color.White,
+                Text = "Skip",
+                TextAlign = ContentAlignment.MiddleLeft,
+                Margin = new Padding(0, 2, 6, 0),
+            };
+            skipPanel.Controls.Add(skipLabel);
+
+            _skipCodeTextBox = new TextBox
+            {
+                Width = 120,
+                MaxLength = 7,
+                CharacterCasing = CharacterCasing.Lower,
+                Margin = new Padding(0, 0, 6, 0),
+            };
+            _skipCodeTextBox.KeyDown += SkipCodeTextBox_KeyDown;
+            skipPanel.Controls.Add(_skipCodeTextBox);
+
+            _skipApplyButton = new Button
+            {
+                Text = "適用",
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Margin = new Padding(0, 0, 6, 0),
+            };
+            _skipApplyButton.Click += (s, e) => ApplySkipCode();
+            skipPanel.Controls.Add(_skipApplyButton);
+
+            _skipInfoLabel = new Label
+            {
+                AutoSize = true,
+                ForeColor = Color.White,
+                Text = "Skip: 全件",
+                TextAlign = ContentAlignment.MiddleLeft,
+                Margin = new Padding(0, 2, 0, 0),
+            };
+            skipPanel.Controls.Add(_skipInfoLabel);
+
             _counterLabel = new Label
             {
                 AutoSize = true,
@@ -198,6 +261,7 @@ namespace Q4Sender
             DragDrop += Form1_DragDrop;
 
             UpdateSeekBarState();
+            UpdateSkipInfoLabel();
         }
 
         private static int ResolveTimerInterval(int? configuredInterval)
@@ -337,6 +401,7 @@ namespace Q4Sender
                 }
             }
 
+            ClearSkipSchedule();
             _idx = 0;
             _paused = false;
             _timer.Start();
@@ -393,6 +458,13 @@ namespace Q4Sender
         private void ShowNext()
         {
             if (_lines.Length == 0) return;
+            if (TryProcessNextScheduled(out int scheduledIndex))
+            {
+                _idx = scheduledIndex;
+                ShowCurrent();
+                return;
+            }
+
             _idx = (_idx + 1) % _lines.Length;
             ShowCurrent();
         }
@@ -409,6 +481,7 @@ namespace Q4Sender
             {
                 UpdateCounterLabel();
                 UpdateSeekBarState();
+                UpdateSkipInfoLabel();
                 return;
             }
 
@@ -472,6 +545,7 @@ namespace Q4Sender
 
                     UpdateCounterLabel();
                     UpdateSeekBarState();
+                    UpdateSkipInfoLabel();
                 }
 
                 // タイトルは控えめに（重くしない）
@@ -682,6 +756,163 @@ namespace Q4Sender
 
             _idx = newIndex;
             ShowCurrent();
+        }
+
+        private void SkipCodeTextBox_KeyDown(object? sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Enter)
+            {
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+                ApplySkipCode();
+            }
+        }
+
+        private void ApplySkipCode()
+        {
+            if (_skipCodeTextBox == null)
+            {
+                return;
+            }
+
+            if (_lines.Length == 0)
+            {
+                MessageBox.Show(this, "コンテンツが読み込まれていません。", "Q4Sender", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            var code = _skipCodeTextBox.Text;
+            if (string.IsNullOrWhiteSpace(code))
+            {
+                ClearSkipSchedule();
+                return;
+            }
+
+            if (!SkipCode32H5T2.TryDecode(code, out var mask))
+            {
+                MessageBox.Show(this, "SkipCode の解読に失敗しました。", "Q4Sender", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            var buckets = SkipCode32H5T2.Buckets(mask, _lines.Length).ToList();
+            var queue = new Queue<int>();
+            foreach (var (start, end) in buckets)
+            {
+                var clampedStart = Math.Max(0, start);
+                var clampedEnd = Math.Min(_lines.Length - 1, end);
+                if (clampedStart > clampedEnd)
+                {
+                    continue;
+                }
+
+                for (int i = clampedStart; i <= clampedEnd; i++)
+                {
+                    queue.Enqueue(i);
+                }
+            }
+
+            _scheduledIndices.Clear();
+            foreach (var index in queue)
+            {
+                _scheduledIndices.Enqueue(index);
+            }
+
+            _scheduledBuckets = buckets;
+            _scheduledTotal = _scheduledIndices.Count;
+            _scheduledSent = 0;
+            _skipScheduleRequested = true;
+
+            UpdateSkipInfoLabel();
+
+            if (_scheduledTotal == 0)
+            {
+                MessageBox.Show(this, "対象となるバケツがありません。", "Q4Sender", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            if (TryProcessNextScheduled(out int firstIndex))
+            {
+                _idx = firstIndex;
+                ShowCurrent();
+            }
+        }
+
+        private bool TryProcessNextScheduled(out int index)
+        {
+            index = -1;
+            if (_scheduledIndices.Count == 0)
+            {
+                return false;
+            }
+
+            index = _scheduledIndices.Dequeue();
+            _scheduledSent++;
+            return true;
+        }
+
+        private void ClearSkipSchedule()
+        {
+            _scheduledIndices.Clear();
+            _scheduledTotal = 0;
+            _scheduledSent = 0;
+            _scheduledBuckets = new();
+            _skipScheduleRequested = false;
+            UpdateSkipInfoLabel();
+        }
+
+        private void UpdateSkipInfoLabel()
+        {
+            if (_skipInfoLabel == null)
+            {
+                return;
+            }
+
+            if (_lines.Length == 0)
+            {
+                _skipInfoLabel.Text = "Skip: 0/0";
+                return;
+            }
+
+            if (!_skipScheduleRequested)
+            {
+                _skipInfoLabel.Text = "Skip: 全件";
+                return;
+            }
+
+            if (_scheduledTotal == 0)
+            {
+                var noneText = FormatBucketRanges();
+                _skipInfoLabel.Text = $"Skip: 対象なし ({noneText})";
+                return;
+            }
+
+            var remaining = Math.Max(0, _scheduledTotal - _scheduledSent);
+            var ranges = FormatBucketRanges();
+            if (remaining == 0)
+            {
+                _skipInfoLabel.Text = $"Skip: 完了 {_scheduledTotal}/{_scheduledTotal} ({ranges})";
+            }
+            else
+            {
+                _skipInfoLabel.Text = $"Skip: 残り {remaining}/{_scheduledTotal} ({ranges})";
+            }
+        }
+
+        private string FormatBucketRanges()
+        {
+            if (_scheduledBuckets == null || _scheduledBuckets.Count == 0)
+            {
+                return "-";
+            }
+
+            return string.Join(", ", _scheduledBuckets.Select(bucket =>
+            {
+                int displayStart = bucket.start + 1;
+                int displayEnd = bucket.end + 1;
+                return displayStart == displayEnd
+                    ? displayStart.ToString()
+                    : $"{displayStart}-{displayEnd}";
+            }));
         }
 
         private void Form1_DragEnter(object? sender, DragEventArgs e)
