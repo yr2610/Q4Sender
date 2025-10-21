@@ -51,6 +51,9 @@ namespace Q4Sender
         private int _scheduledSent;
         private List<(int start, int end)> _scheduledBuckets = new();
         private bool _skipScheduleRequested;
+        private bool[]? _skipExcludedMap;
+        private int _skipExcludedCount;
+        private bool _displayingScheduledIndex;
 
         public Form1()
         {
@@ -199,6 +202,7 @@ namespace Q4Sender
                 Margin = new Padding(0, 0, 6, 0),
             };
             _skipCodeTextBox.KeyDown += SkipCodeTextBox_KeyDown;
+            _skipCodeTextBox.TextChanged += SkipCodeTextBox_TextChanged;
             skipPanel.Controls.Add(_skipCodeTextBox);
 
             _skipApplyButton = new Button
@@ -208,7 +212,7 @@ namespace Q4Sender
                 AutoSizeMode = AutoSizeMode.GrowAndShrink,
                 Margin = new Padding(0, 0, 6, 0),
             };
-            _skipApplyButton.Click += (s, e) => ApplySkipCode();
+            _skipApplyButton.Click += (s, e) => ApplySkipCode(showErrors: true);
             skipPanel.Controls.Add(_skipApplyButton);
 
             _skipInfoLabel = new Label
@@ -465,13 +469,20 @@ namespace Q4Sender
                 return;
             }
 
-            _idx = (_idx + 1) % _lines.Length;
+            if (TryGetNextNonSkippedIndex(_idx, 1, out var nextIndex))
+            {
+                _idx = nextIndex;
+            }
+
             ShowCurrent();
         }
         private void ShowPrev()
         {
             if (_lines.Length == 0) return;
-            _idx = (_idx - 1 + _lines.Length) % _lines.Length;
+            if (TryGetNextNonSkippedIndex(_idx, -1, out var prevIndex))
+            {
+                _idx = prevIndex;
+            }
             ShowCurrent();
         }
 
@@ -479,6 +490,19 @@ namespace Q4Sender
         {
             if (_lines.Length == 0)
             {
+                UpdateCounterLabel();
+                UpdateSeekBarState();
+                UpdateSkipInfoLabel();
+                return;
+            }
+
+            var displayingScheduled = _displayingScheduledIndex;
+            _displayingScheduledIndex = false;
+
+            if (!displayingScheduled && !TryEnsureCurrentIndexVisible())
+            {
+                _pictureBox.Image?.Dispose();
+                _pictureBox.Image = null;
                 UpdateCounterLabel();
                 UpdateSeekBarState();
                 UpdateSkipInfoLabel();
@@ -557,6 +581,71 @@ namespace Q4Sender
                 MessageBox.Show(this, "QR生成・描画でエラー: " + ex.Message, "Q4Sender",
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+        }
+
+        private bool TryEnsureCurrentIndexVisible()
+        {
+            if (_lines.Length == 0)
+            {
+                return false;
+            }
+
+            if (_skipExcludedMap != null && _skipExcludedMap.Length == _lines.Length && _skipExcludedCount >= _lines.Length)
+            {
+                return false;
+            }
+
+            if (!IsIndexSkipped(_idx))
+            {
+                return true;
+            }
+
+            if (TryGetNextNonSkippedIndex(_idx, 1, out var forwardIndex))
+            {
+                _idx = forwardIndex;
+                return true;
+            }
+
+            if (TryGetNextNonSkippedIndex(_idx, -1, out var backwardIndex))
+            {
+                _idx = backwardIndex;
+                return true;
+            }
+
+            return false;
+        }
+
+        private bool TryGetNextNonSkippedIndex(int startIndex, int direction, out int foundIndex)
+        {
+            foundIndex = startIndex;
+
+            if (_lines.Length == 0)
+            {
+                return false;
+            }
+
+            int current = startIndex;
+            for (int step = 0; step < _lines.Length; step++)
+            {
+                current = (current + direction + _lines.Length) % _lines.Length;
+                if (!IsIndexSkipped(current))
+                {
+                    foundIndex = current;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool IsIndexSkipped(int index)
+        {
+            if (_skipExcludedMap == null || _skipExcludedMap.Length != _lines.Length)
+            {
+                return false;
+            }
+
+            return index >= 0 && index < _skipExcludedMap.Length && _skipExcludedMap[index];
         }
 
         // ========= パッカー（任意ファイル → Q4行） =========
@@ -764,11 +853,16 @@ namespace Q4Sender
             {
                 e.Handled = true;
                 e.SuppressKeyPress = true;
-                ApplySkipCode();
+                ApplySkipCode(showErrors: true);
             }
         }
 
-        private void ApplySkipCode()
+        private void SkipCodeTextBox_TextChanged(object? sender, EventArgs e)
+        {
+            ApplySkipCode(showErrors: false);
+        }
+
+        private void ApplySkipCode(bool showErrors)
         {
             if (_skipCodeTextBox == null)
             {
@@ -777,7 +871,10 @@ namespace Q4Sender
 
             if (_lines.Length == 0)
             {
-                MessageBox.Show(this, "コンテンツが読み込まれていません。", "Q4Sender", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                if (showErrors)
+                {
+                    MessageBox.Show(this, "コンテンツが読み込まれていません。", "Q4Sender", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
                 return;
             }
 
@@ -790,12 +887,19 @@ namespace Q4Sender
 
             if (!SkipCode32H5T2.TryDecode(code, out var mask))
             {
-                MessageBox.Show(this, "SkipCode の解読に失敗しました。", "Q4Sender", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                if (showErrors)
+                {
+                    MessageBox.Show(this, "SkipCode の解読に失敗しました。", "Q4Sender", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
                 return;
             }
 
             var buckets = SkipCode32H5T2.Buckets(mask, _lines.Length).ToList();
-            var queue = new Queue<int>();
+            var clampedBuckets = new List<(int start, int end)>();
+            var uniqueIndices = new HashSet<int>();
+
+            _scheduledIndices.Clear();
+
             foreach (var (start, end) in buckets)
             {
                 var clampedStart = Math.Max(0, start);
@@ -805,28 +909,50 @@ namespace Q4Sender
                     continue;
                 }
 
+                clampedBuckets.Add((clampedStart, clampedEnd));
+
                 for (int i = clampedStart; i <= clampedEnd; i++)
                 {
-                    queue.Enqueue(i);
+                    if (uniqueIndices.Add(i))
+                    {
+                        _scheduledIndices.Enqueue(i);
+                    }
                 }
             }
 
-            _scheduledIndices.Clear();
-            foreach (var index in queue)
-            {
-                _scheduledIndices.Enqueue(index);
-            }
-
-            _scheduledBuckets = buckets;
-            _scheduledTotal = _scheduledIndices.Count;
+            _scheduledBuckets = clampedBuckets;
+            _scheduledTotal = uniqueIndices.Count;
             _scheduledSent = 0;
             _skipScheduleRequested = true;
+
+            if (_lines.Length > 0)
+            {
+                _skipExcludedMap = new bool[_lines.Length];
+                _skipExcludedCount = 0;
+
+                foreach (var index in uniqueIndices)
+                {
+                    if (index >= 0 && index < _skipExcludedMap.Length && !_skipExcludedMap[index])
+                    {
+                        _skipExcludedMap[index] = true;
+                        _skipExcludedCount++;
+                    }
+                }
+            }
+            else
+            {
+                _skipExcludedMap = null;
+                _skipExcludedCount = 0;
+            }
 
             UpdateSkipInfoLabel();
 
             if (_scheduledTotal == 0)
             {
-                MessageBox.Show(this, "対象となるバケツがありません。", "Q4Sender", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                if (showErrors)
+                {
+                    MessageBox.Show(this, "対象となるバケツがありません。", "Q4Sender", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
                 return;
             }
 
@@ -834,19 +960,39 @@ namespace Q4Sender
             {
                 _idx = firstIndex;
                 ShowCurrent();
+                return;
             }
+
+            if (!TryEnsureCurrentIndexVisible())
+            {
+                ShowCurrent();
+                return;
+            }
+
+            ShowCurrent();
         }
 
         private bool TryProcessNextScheduled(out int index)
         {
             index = -1;
+            _displayingScheduledIndex = false;
+
             if (_scheduledIndices.Count == 0)
             {
                 return false;
             }
 
             index = _scheduledIndices.Dequeue();
-            _scheduledSent++;
+            if (_scheduledSent < _scheduledTotal)
+            {
+                _scheduledSent++;
+            }
+            else
+            {
+                _scheduledSent = _scheduledTotal;
+            }
+
+            _displayingScheduledIndex = true;
             return true;
         }
 
@@ -857,6 +1003,9 @@ namespace Q4Sender
             _scheduledSent = 0;
             _scheduledBuckets = new();
             _skipScheduleRequested = false;
+            _skipExcludedMap = null;
+            _skipExcludedCount = 0;
+            _displayingScheduledIndex = false;
             UpdateSkipInfoLabel();
         }
 
