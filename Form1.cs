@@ -326,6 +326,11 @@ namespace Q4Sender
         // ========= キー操作 =========
         private void Form1_KeyDown(object? sender, KeyEventArgs e)
         {
+            if (_skipCodeTextBox?.Focused == true && (e.KeyCode == Keys.Left || e.KeyCode == Keys.Right))
+            {
+                return;
+            }
+
             if (e.KeyCode == Keys.Escape)
             {
                 Close();
