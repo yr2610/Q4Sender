@@ -30,7 +30,6 @@ namespace Q4Sender
         private string[] _lines = Array.Empty<string>();
         private int _idx = 0;
         private bool _paused = false;
-        private bool _fullscreen = false;
 
         // タイマ
         private readonly System.Windows.Forms.Timer _timer;
@@ -48,8 +47,6 @@ namespace Q4Sender
         private Button _skipApplyButton;
         private readonly Queue<int> _scheduledIndices = new();
         private int _scheduledTotal;
-        private int _scheduledSent;
-        private List<(int start, int end)> _scheduledBuckets = new();
         private bool _skipScheduleRequested;
         private bool[]? _skipExcludedMap;
         private int _skipExcludedCount;
@@ -154,7 +151,6 @@ namespace Q4Sender
   Ctrl+O : ファイルを開く（任意ファイル or Q4行テキスト）
   Drag&Drop : ファイルを開く
   Space  : 一時停止/再開
-  F      : 全画面切替
   ← / →  : 前 / 次
   Esc    : 終了
   F1     : ヘルプ表示"
@@ -278,17 +274,43 @@ namespace Q4Sender
         // ========= キー操作 =========
         private void Form1_KeyDown(object sender, KeyEventArgs e)
         {
-            if (e.KeyCode == Keys.Escape) Close();
+            if (e.KeyCode == Keys.Escape)
+            {
+                Close();
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+            }
             else if (e.KeyCode == Keys.Space)
             {
                 _paused = !_paused;
                 if (_paused) _timer.Stop(); else _timer.Start();
+                e.Handled = true;
+                e.SuppressKeyPress = true;
             }
-            else if (e.Control && e.KeyCode == Keys.O) LoadAny();         // 任意ファイル or Q4テキスト
-            else if (e.KeyCode == Keys.F) ToggleFullScreen();             // 全画面
-            else if (e.KeyCode == Keys.Right) ShowNext();                 // 次へ
-            else if (e.KeyCode == Keys.Left) ShowPrev();                  // 前へ
-            else if (e.KeyCode == Keys.F1) ShowHelpOverlay();             // ヘルプ再表示
+            else if (e.Control && e.KeyCode == Keys.O)
+            {
+                LoadAny();         // 任意ファイル or Q4テキスト
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+            }
+            else if (e.KeyCode == Keys.Right)
+            {
+                ShowNextFrame();            // 次へ
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+            }
+            else if (e.KeyCode == Keys.Left)
+            {
+                ShowPrevFrame();             // 前へ
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+            }
+            else if (e.KeyCode == Keys.F1)
+            {
+                ShowHelpOverlay();             // ヘルプ再表示
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+            }
         }
 
         private void ShowHelpOverlay()
@@ -297,26 +319,6 @@ namespace Q4Sender
             _helpOverlay.BringToFront();
             _helpAutoHide.Stop();
             _helpAutoHide.Start(); // 4秒後に自動で消える
-        }
-
-        private void ToggleFullScreen()
-        {
-            _fullscreen = !_fullscreen;
-            if (_fullscreen)
-            {
-                FormBorderStyle = FormBorderStyle.None;
-                WindowState = FormWindowState.Maximized;
-                TopMost = true;
-                BackColor = Color.White;
-                _pictureBox.BackColor = Color.White;
-            }
-            else
-            {
-                TopMost = false;
-                WindowState = FormWindowState.Normal;
-                FormBorderStyle = FormBorderStyle.Sizable;
-                BackColor = SystemColors.Control;
-            }
         }
 
         // ========= 読み込み（任意ファイル or 既成Q4テキスト） =========
@@ -479,6 +481,32 @@ namespace Q4Sender
         private void ShowPrev()
         {
             if (_lines.Length == 0) return;
+            if (TryGetNextNonSkippedIndex(_idx, -1, out var prevIndex))
+            {
+                _idx = prevIndex;
+            }
+            ShowCurrent();
+        }
+
+        private void ShowNextFrame()
+        {
+            if (_lines.Length == 0) return;
+            _paused = true;
+            _timer.Stop();
+            _scheduledIndices.Clear();
+            if (TryGetNextNonSkippedIndex(_idx, 1, out var nextIndex))
+            {
+                _idx = nextIndex;
+            }
+            ShowCurrent();
+        }
+
+        private void ShowPrevFrame()
+        {
+            if (_lines.Length == 0) return;
+            _paused = true;
+            _timer.Stop();
+            _scheduledIndices.Clear();
             if (TryGetNextNonSkippedIndex(_idx, -1, out var prevIndex))
             {
                 _idx = prevIndex;
@@ -895,7 +923,6 @@ namespace Q4Sender
             }
 
             var buckets = SkipCode32H5T2.Buckets(mask, _lines.Length).ToList();
-            var clampedBuckets = new List<(int start, int end)>();
             var uniqueIndices = new HashSet<int>();
 
             _scheduledIndices.Clear();
@@ -909,8 +936,6 @@ namespace Q4Sender
                     continue;
                 }
 
-                clampedBuckets.Add((clampedStart, clampedEnd));
-
                 for (int i = clampedStart; i <= clampedEnd; i++)
                 {
                     if (uniqueIndices.Add(i))
@@ -920,9 +945,7 @@ namespace Q4Sender
                 }
             }
 
-            _scheduledBuckets = clampedBuckets;
             _scheduledTotal = uniqueIndices.Count;
-            _scheduledSent = 0;
             _skipScheduleRequested = true;
 
             if (_lines.Length > 0)
@@ -983,15 +1006,6 @@ namespace Q4Sender
             }
 
             index = _scheduledIndices.Dequeue();
-            if (_scheduledSent < _scheduledTotal)
-            {
-                _scheduledSent++;
-            }
-            else
-            {
-                _scheduledSent = _scheduledTotal;
-            }
-
             _displayingScheduledIndex = true;
             return true;
         }
@@ -1000,8 +1014,6 @@ namespace Q4Sender
         {
             _scheduledIndices.Clear();
             _scheduledTotal = 0;
-            _scheduledSent = 0;
-            _scheduledBuckets = new();
             _skipScheduleRequested = false;
             _skipExcludedMap = null;
             _skipExcludedCount = 0;
@@ -1024,44 +1036,46 @@ namespace Q4Sender
 
             if (!_skipScheduleRequested)
             {
-                _skipInfoLabel.Text = "Skip: 全件";
+                _skipInfoLabel.Text = "Skip: all";
                 return;
             }
 
             if (_scheduledTotal == 0)
             {
-                var noneText = FormatBucketRanges();
-                _skipInfoLabel.Text = $"Skip: 対象なし ({noneText})";
+                _skipInfoLabel.Text = "Skip: none";
                 return;
             }
 
-            var remaining = Math.Max(0, _scheduledTotal - _scheduledSent);
-            var ranges = FormatBucketRanges();
-            if (remaining == 0)
+            var currentFrame = $"{_idx + 1}/{_lines.Length}";
+            if (IsIndexSkipped(_idx))
             {
-                _skipInfoLabel.Text = $"Skip: 完了 {_scheduledTotal}/{_scheduledTotal} ({ranges})";
+                _skipInfoLabel.Text = $"Skip: {currentFrame} (manual, target {_scheduledTotal})";
             }
             else
             {
-                _skipInfoLabel.Text = $"Skip: 残り {remaining}/{_scheduledTotal} ({ranges})";
+                var currentTarget = CountSkipTargetsThrough(_idx);
+                _skipInfoLabel.Text = $"Skip: {currentFrame} (target {currentTarget}/{_scheduledTotal})";
             }
         }
 
-        private string FormatBucketRanges()
+        private int CountSkipTargetsThrough(int index)
         {
-            if (_scheduledBuckets == null || _scheduledBuckets.Count == 0)
+            if (_skipExcludedMap == null || _skipExcludedMap.Length != _lines.Length || _lines.Length == 0)
             {
-                return "-";
+                return 0;
             }
 
-            return string.Join(", ", _scheduledBuckets.Select(bucket =>
+            var clampedIndex = Math.Max(0, Math.Min(index, _skipExcludedMap.Length - 1));
+            var count = 0;
+            for (int i = 0; i <= clampedIndex; i++)
             {
-                int displayStart = bucket.start + 1;
-                int displayEnd = bucket.end + 1;
-                return displayStart == displayEnd
-                    ? displayStart.ToString()
-                    : $"{displayStart}-{displayEnd}";
-            }));
+                if (!_skipExcludedMap[i])
+                {
+                    count++;
+                }
+            }
+
+            return count;
         }
 
         private void Form1_DragEnter(object? sender, DragEventArgs e)
