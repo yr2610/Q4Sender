@@ -44,7 +44,6 @@ namespace Q4Sender
         private TrackBar _seekBar;
         private bool _suppressSeekEvent;
         private TextBox _skipCodeTextBox;
-        private Button _skipApplyButton;
         private readonly Queue<int> _scheduledIndices = new();
         private int _scheduledTotal;
         private bool _skipScheduleRequested;
@@ -131,6 +130,7 @@ namespace Q4Sender
                 LargeChange = 10,
             };
             _seekBar.Scroll += SeekBar_Scroll;
+            _seekBar.MouseDown += SeekBar_MouseDown;
             layout.Controls.Add(_seekBar, 0, 1);
 
             // ヘルプオーバーレイ（半透明）
@@ -201,21 +201,11 @@ namespace Q4Sender
             _skipCodeTextBox.TextChanged += SkipCodeTextBox_TextChanged;
             skipPanel.Controls.Add(_skipCodeTextBox);
 
-            _skipApplyButton = new Button
-            {
-                Text = "適用",
-                AutoSize = true,
-                AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                Margin = new Padding(0, 0, 6, 0),
-            };
-            _skipApplyButton.Click += (s, e) => ApplySkipCode(showErrors: true);
-            skipPanel.Controls.Add(_skipApplyButton);
-
             _skipInfoLabel = new Label
             {
                 AutoSize = true,
                 ForeColor = Color.White,
-                Text = "Skip: 全件",
+                Text = "target all",
                 TextAlign = ContentAlignment.MiddleLeft,
                 Margin = new Padding(0, 2, 0, 0),
             };
@@ -272,7 +262,7 @@ namespace Q4Sender
         }
 
         // ========= キー操作 =========
-        private void Form1_KeyDown(object sender, KeyEventArgs e)
+        private void Form1_KeyDown(object? sender, KeyEventArgs e)
         {
             if (e.KeyCode == Keys.Escape)
             {
@@ -887,8 +877,88 @@ namespace Q4Sender
                 return;
             }
 
-            _idx = newIndex;
+            JumpToRequestedIndex(newIndex);
+        }
+
+        private void SeekBar_MouseDown(object? sender, MouseEventArgs e)
+        {
+            if (_seekBar == null || !_seekBar.Enabled || _lines.Length == 0 || e.Button != MouseButtons.Left)
+            {
+                return;
+            }
+
+            BeginInvoke(new Action(() =>
+            {
+                if (_seekBar == null || _lines.Length == 0)
+                {
+                    return;
+                }
+
+                var width = Math.Max(1, _seekBar.ClientSize.Width - 1);
+                var ratio = Math.Max(0.0, Math.Min(1.0, e.X / (double)width));
+                var value = _seekBar.Minimum + (int)Math.Round(ratio * (_seekBar.Maximum - _seekBar.Minimum));
+                JumpToRequestedIndex(value);
+            }));
+        }
+
+        private void JumpToRequestedIndex(int requestedIndex)
+        {
+            if (_lines.Length == 0)
+            {
+                return;
+            }
+
+            _paused = true;
+            _timer.Stop();
+            _scheduledIndices.Clear();
+
+            var clampedIndex = Math.Max(0, Math.Min(_lines.Length - 1, requestedIndex));
+            if (TryGetNearestNonSkippedIndex(clampedIndex, out var nearestIndex))
+            {
+                _idx = nearestIndex;
+            }
+            else
+            {
+                _idx = clampedIndex;
+            }
+
             ShowCurrent();
+        }
+
+        private bool TryGetNearestNonSkippedIndex(int preferredIndex, out int foundIndex)
+        {
+            foundIndex = preferredIndex;
+
+            if (_lines.Length == 0)
+            {
+                return false;
+            }
+
+            var clampedIndex = Math.Max(0, Math.Min(_lines.Length - 1, preferredIndex));
+            if (!IsIndexSkipped(clampedIndex))
+            {
+                foundIndex = clampedIndex;
+                return true;
+            }
+
+            for (int offset = 1; offset < _lines.Length; offset++)
+            {
+                var left = clampedIndex - offset;
+                if (left >= 0 && !IsIndexSkipped(left))
+                {
+                    foundIndex = left;
+                    return true;
+                }
+
+                var right = clampedIndex + offset;
+                if (right < _lines.Length && !IsIndexSkipped(right))
+                {
+                    foundIndex = right;
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private void SkipCodeTextBox_KeyDown(object? sender, KeyEventArgs e)
@@ -1046,31 +1116,30 @@ namespace Q4Sender
 
             if (_lines.Length == 0)
             {
-                _skipInfoLabel.Text = "Skip: 0/0";
+                _skipInfoLabel.Text = "target -";
                 return;
             }
 
             if (!_skipScheduleRequested)
             {
-                _skipInfoLabel.Text = "Skip: all";
+                _skipInfoLabel.Text = "target all";
                 return;
             }
 
             if (_scheduledTotal == 0)
             {
-                _skipInfoLabel.Text = "Skip: none";
+                _skipInfoLabel.Text = "target none";
                 return;
             }
 
-            var currentFrame = $"{_idx + 1}/{_lines.Length}";
             if (IsIndexSkipped(_idx))
             {
-                _skipInfoLabel.Text = $"Skip: {currentFrame} (manual, target {_scheduledTotal})";
+                _skipInfoLabel.Text = $"target manual/{_scheduledTotal}";
             }
             else
             {
                 var currentTarget = CountSkipTargetsThrough(_idx);
-                _skipInfoLabel.Text = $"Skip: {currentFrame} (target {currentTarget}/{_scheduledTotal})";
+                _skipInfoLabel.Text = $"target {currentTarget}/{_scheduledTotal}";
             }
         }
 
