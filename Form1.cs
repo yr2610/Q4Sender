@@ -930,11 +930,11 @@ namespace Q4Sender
                 _skipExcludedMap = new bool[_lines.Length];
                 _skipExcludedCount = 0;
 
-                foreach (var index in uniqueIndices)
+                for (int i = 0; i < _skipExcludedMap.Length; i++)
                 {
-                    if (index >= 0 && index < _skipExcludedMap.Length && !_skipExcludedMap[index])
+                    if (!uniqueIndices.Contains(i))
                     {
-                        _skipExcludedMap[index] = true;
+                        _skipExcludedMap[i] = true;
                         _skipExcludedCount++;
                     }
                 }
