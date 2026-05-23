@@ -20,6 +20,10 @@ namespace Q4Sender
         private const int MaxQrByteCapacity = 2953; // Version40-L（Byteモード）の上限
         private const int QrLineOverheadWorstCase = 17; // "Q4|FFFF/FFFF|SID|" の最大オーバーヘッド
         private const int DefaultTimerInterval = 125;
+        private const int DefaultWindowWidth = 480;
+        private const int DefaultWindowHeight = 360;
+        private const int MinSavedWindowWidth = 320;
+        private const int MinSavedWindowHeight = 240;
 
         private readonly AppConfig _config;
         private readonly QRCodeGenerator.ECCLevel _effectiveEccLevel;
@@ -88,7 +92,8 @@ namespace Q4Sender
             StartPosition = FormStartPosition.CenterScreen;
 
             // ==== 初期サイズ：小さめ ====
-            Width = 480; Height = 360;
+            Width = DefaultWindowWidth; Height = DefaultWindowHeight;
+            RestoreWindowSize();
 
             KeyPreview = true;
             AllowDrop = true;
@@ -249,6 +254,7 @@ namespace Q4Sender
 
             DragEnter += Form1_DragEnter;
             DragDrop += Form1_DragDrop;
+            FormClosing += (s, e) => SaveWindowSize();
 
             UpdateSeekBarState();
             UpdateSkipInfoLabel();
@@ -259,6 +265,62 @@ namespace Q4Sender
             return configuredInterval is int value && value >= 1
                 ? value
                 : DefaultTimerInterval;
+        }
+
+        private static string WindowSizeStatePath
+        {
+            get
+            {
+                var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+                return Path.Combine(appData, "Q4Sender", "window-size.txt");
+            }
+        }
+
+        private void RestoreWindowSize()
+        {
+            try
+            {
+                var path = WindowSizeStatePath;
+                if (!File.Exists(path))
+                {
+                    return;
+                }
+
+                var parts = File.ReadAllText(path, Encoding.UTF8)
+                    .Split(new[] { ',', ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length < 2 ||
+                    !int.TryParse(parts[0], out var width) ||
+                    !int.TryParse(parts[1], out var height))
+                {
+                    return;
+                }
+
+                var workingArea = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, width, height);
+                width = Math.Max(MinSavedWindowWidth, Math.Min(width, workingArea.Width));
+                height = Math.Max(MinSavedWindowHeight, Math.Min(height, workingArea.Height));
+                Size = new Size(width, height);
+            }
+            catch
+            {
+                // 保存状態が壊れていても起動は続ける。
+            }
+        }
+
+        private void SaveWindowSize()
+        {
+            try
+            {
+                var bounds = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
+                var width = Math.Max(MinSavedWindowWidth, bounds.Width);
+                var height = Math.Max(MinSavedWindowHeight, bounds.Height);
+                var path = WindowSizeStatePath;
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                File.WriteAllText(path, $"{width},{height}", Encoding.UTF8);
+            }
+            catch
+            {
+                // サイズ保存に失敗しても終了は妨げない。
+            }
         }
 
         // ========= キー操作 =========
@@ -908,7 +970,7 @@ namespace Q4Sender
                 return;
             }
 
-            _paused = true;
+            var resumeAfterSeek = !_paused && _timer.Enabled;
             _timer.Stop();
             _scheduledIndices.Clear();
 
@@ -923,6 +985,10 @@ namespace Q4Sender
             }
 
             ShowCurrent();
+            if (resumeAfterSeek && !_paused)
+            {
+                _timer.Start();
+            }
         }
 
         private bool TryGetNearestNonSkippedIndex(int preferredIndex, out int foundIndex)
