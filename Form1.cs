@@ -24,6 +24,10 @@ namespace Q4Sender
         private const int DefaultWindowHeight = 360;
         private const int MinSavedWindowWidth = 320;
         private const int MinSavedWindowHeight = 240;
+        private static readonly Color NormalQrDarkColor = Color.Black;
+        private static readonly Color NormalQrLightColor = Color.White;
+        private static readonly Color SubtleQrDarkColor = Color.FromArgb(92, 102, 115);
+        private static readonly Color SubtleQrLightColor = Color.FromArgb(246, 248, 250);
 
         private readonly AppConfig _config;
         private readonly QRCodeGenerator.ECCLevel _effectiveEccLevel;
@@ -45,8 +49,10 @@ namespace Q4Sender
         private Label _helpLabel;
         private Label _counterLabel;
         private Label _skipInfoLabel;
+        private CheckBox _subtleQrCheckBox;
         private TrackBar _seekBar;
         private bool _suppressSeekEvent;
+        private bool _useSubtleQr = true;
         private TextBox _skipCodeTextBox;
         private readonly Queue<int> _scheduledIndices = new();
         private int _scheduledTotal;
@@ -217,6 +223,19 @@ namespace Q4Sender
             };
             skipPanel.Controls.Add(_skipInfoLabel);
 
+            _subtleQrCheckBox = new CheckBox
+            {
+                AutoSize = true,
+                ForeColor = Color.White,
+                BackColor = Color.Transparent,
+                Text = "Soft tone",
+                Checked = true,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Margin = new Padding(16, 1, 0, 0),
+            };
+            _subtleQrCheckBox.CheckedChanged += SubtleQrCheckBox_CheckedChanged;
+            skipPanel.Controls.Add(_subtleQrCheckBox);
+
             _counterLabel = new Label
             {
                 AutoSize = true,
@@ -249,7 +268,7 @@ namespace Q4Sender
 
             Shown += (s, e) =>
             {
-                _pictureBox.BackColor = Color.White;
+                _pictureBox.BackColor = GetQrLightColor();
                 UpdateCounterLabel();
             };
 
@@ -266,6 +285,27 @@ namespace Q4Sender
             return configuredInterval is int value && value >= 1
                 ? value
                 : DefaultTimerInterval;
+        }
+
+        private Color GetQrDarkColor()
+        {
+            return _useSubtleQr ? SubtleQrDarkColor : NormalQrDarkColor;
+        }
+
+        private Color GetQrLightColor()
+        {
+            return _useSubtleQr ? SubtleQrLightColor : NormalQrLightColor;
+        }
+
+        private void SubtleQrCheckBox_CheckedChanged(object? sender, EventArgs e)
+        {
+            _useSubtleQr = _subtleQrCheckBox.Checked;
+            _pictureBox.BackColor = GetQrLightColor();
+
+            if (_lines.Length > 0)
+            {
+                ShowCurrent();
+            }
         }
 
         private static string WindowSizeStatePath
@@ -584,6 +624,7 @@ namespace Q4Sender
         {
             if (_lines.Length == 0)
             {
+                _pictureBox.BackColor = GetQrLightColor();
                 UpdateCounterLabel();
                 UpdateSeekBarState();
                 UpdateSkipInfoLabel();
@@ -595,6 +636,7 @@ namespace Q4Sender
 
             if (!displayingScheduled && !TryEnsureCurrentIndexVisible())
             {
+                _pictureBox.BackColor = GetQrLightColor();
                 _pictureBox.Image?.Dispose();
                 _pictureBox.Image = null;
                 UpdateCounterLabel();
@@ -655,11 +697,11 @@ namespace Q4Sender
                     using var qr = new QRCode(data);
                     using var bmp = qr.GetGraphic(
                         pixelsPerModule: 16,       // 小さめウィンドウでも見やすいよう大きめ
-                        Color.Black,
-                        Color.White,
+                        GetQrDarkColor(),
+                        GetQrLightColor(),
                         drawQuietZones: true);
 
-                    _pictureBox.BackColor = Color.White;
+                    _pictureBox.BackColor = GetQrLightColor();
                     _pictureBox.Image?.Dispose();
                     _pictureBox.Image = (Bitmap)bmp.Clone();
 
