@@ -120,6 +120,7 @@ namespace Q4Sender
                 SizeMode = PictureBoxSizeMode.Zoom,
                 BackColor = Color.White
             };
+            _pictureBox.MouseDown += (s, e) => FocusFrameNavigation();
             layout.Controls.Add(_pictureBox, 0, 0);
 
             // シークバー
@@ -376,6 +377,14 @@ namespace Q4Sender
             _helpOverlay.BringToFront();
             _helpAutoHide.Stop();
             _helpAutoHide.Start(); // 4秒後に自動で消える
+        }
+
+        private void FocusFrameNavigation()
+        {
+            if (_seekBar?.CanFocus == true)
+            {
+                _seekBar.Focus();
+            }
         }
 
         // ========= 読み込み（任意ファイル or 既成Q4テキスト） =========
