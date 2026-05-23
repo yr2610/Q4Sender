@@ -537,6 +537,8 @@ namespace Q4Sender
                 return;
             }
 
+            UpdateFrameIndicators(repaintNow: true);
+
             if (_invalidEccValue != null && !_eccWarningShown)
             {
                 _eccWarningShown = true; // 警告ダイアログが多重に開かないように先にフラグを更新
@@ -595,9 +597,7 @@ namespace Q4Sender
                     _pictureBox.Image?.Dispose();
                     _pictureBox.Image = (Bitmap)bmp.Clone();
 
-                    UpdateCounterLabel();
-                    UpdateSeekBarState();
-                    UpdateSkipInfoLabel();
+                    UpdateFrameIndicators(repaintNow: false);
                 }
 
                 // タイトルは控えめに（重くしない）
@@ -811,6 +811,22 @@ namespace Q4Sender
             }
 
             return best;
+        }
+
+        private void UpdateFrameIndicators(bool repaintNow)
+        {
+            UpdateCounterLabel();
+            UpdateSeekBarState();
+            UpdateSkipInfoLabel();
+
+            if (!repaintNow)
+            {
+                return;
+            }
+
+            _counterLabel?.Update();
+            _skipInfoLabel?.Update();
+            _seekBar?.Update();
         }
 
         private void UpdateCounterLabel()
