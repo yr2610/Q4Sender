@@ -1,0 +1,3 @@
+[submodule "Scanner"]
+	path = Scanner
+	url = https://github.com/yr2610/QRScanner
