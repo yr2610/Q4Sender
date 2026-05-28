@@ -36,9 +36,13 @@ file -> zip archive bytes -> Q4F fountain symbols
 ```
 
 The first `sourceCount` symbols are systematic symbols, so a perfect scan can
-recover exactly like plain chunking. Later symbols are deterministic XOR repair
-symbols. The coefficient set is derived from `symbolId` and `sourceCount`, so the
-scanner does not need the coefficient list in the QR text.
+recover exactly like plain chunking. Q4Sender then emits a reversed systematic
+replica pass before the XOR repair symbols. This gives the scanner a direct way
+to recover a late missing source symbol and avoids the "last one never arrives"
+failure mode that a tiny finite LT repair set can have. Later symbols are
+deterministic XOR repair symbols. The coefficient set is derived from `symbolId`
+and `sourceCount`, so the scanner does not need the coefficient list in the QR
+text.
 
 ## Decoding Progress
 

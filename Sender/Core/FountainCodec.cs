@@ -19,8 +19,8 @@ namespace Q4Sender.Core
     public static class FountainCodec
     {
         public const int Version = 1;
-        private const double RepairRatio = 0.25;
-        private const int MinRepairSymbols = 16;
+        private const double RepairRatio = 0.75;
+        private const int MinRepairSymbols = 64;
 
         public static FountainPackage PackFileToQ4FLines(string filePath, int symbolSize, string? sid = null)
         {
@@ -38,8 +38,9 @@ namespace Q4Sender.Core
                 throw new InvalidOperationException("Fountain source symbol count exceeds 65,535.");
             }
 
+            var replicaCount = sourceSymbolCount > 1 ? sourceSymbolCount : 0;
             var repairCount = Math.Max(MinRepairSymbols, (int)Math.Ceiling(sourceSymbolCount * RepairRatio));
-            var totalSymbols = Math.Min(0xFFFF, sourceSymbolCount + repairCount);
+            var totalSymbols = Math.Min(0xFFFF, sourceSymbolCount + replicaCount + repairCount);
             var chunks = BuildSourceChunks(source, sourceSymbolCount, symbolSize);
             var crc = Crc32(source);
             var lines = new string[totalSymbols];
@@ -73,6 +74,11 @@ namespace Q4Sender.Core
             if (symbolId >= 0 && symbolId < sourceSymbolCount)
             {
                 return new[] { symbolId };
+            }
+
+            if (sourceSymbolCount > 1 && symbolId < sourceSymbolCount * 2)
+            {
+                return new[] { sourceSymbolCount - 1 - (symbolId - sourceSymbolCount) };
             }
 
             var rng = new XorShift32(SeedFor(symbolId, sourceSymbolCount));
@@ -169,17 +175,19 @@ namespace Q4Sender.Core
             }
 
             var sample = rng.NextUInt32() % 100u;
-            var degree = sample switch
+            var preferred = sample switch
             {
-                < 42u => 2,
-                < 67u => 3,
-                < 82u => 4,
-                < 92u => 6,
-                < 98u => 8,
-                _ => 12
+                < 15u => 2,
+                < 30u => 3,
+                < 50u => 5,
+                < 70u => 8,
+                < 85u => 13,
+                < 95u => 21,
+                _ => 34
             };
 
-            return Math.Min(degree, sourceSymbolCount);
+            var denseCap = Math.Min(64, sourceSymbolCount);
+            return Math.Min(preferred, denseCap);
         }
 
         private static uint SeedFor(int symbolId, int sourceSymbolCount)
