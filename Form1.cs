@@ -1052,8 +1052,10 @@ namespace Q4Sender
             if (_seekBar == null) return;
 
             _suppressSeekEvent = true;
+            var showSeekBar = _lines.Length > 0 && !_currentLinesAreFountain;
+            _seekBar.Visible = showSeekBar;
 
-            if (_lines.Length == 0)
+            if (!showSeekBar)
             {
                 _seekBar.Enabled = false;
                 _seekBar.Minimum = 0;
