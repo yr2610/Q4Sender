@@ -12,8 +12,8 @@ namespace Q4Sender.Core
     {
         public const int Version = 1;
         private const int WirehairPacketHeaderBytes = 8;
-        private const double RepairRatio = 0.25;
-        private const int MinRepairPackets = 16;
+        private const double FreshRepairRatio = 2.0;
+        private const int MinRepairPackets = 64;
 
         public static FountainPackage PackFileToQ4WLines(string filePath, int packetByteCount, string? sid = null)
         {
@@ -31,7 +31,7 @@ namespace Q4Sender.Core
                 throw new InvalidOperationException("Wirehair source packet count exceeds 65,535.");
             }
 
-            var repairPackets = Math.Max(MinRepairPackets, (int)Math.Ceiling(sourcePacketCount * RepairRatio));
+            var repairPackets = Math.Max(MinRepairPackets, (int)Math.Ceiling(sourcePacketCount * FreshRepairRatio));
             var totalPackets = Math.Min(0xFFFF, sourcePacketCount + repairPackets);
             var crc = Crc32(source);
             var payloads = EncodePacketsWithNode(source, packetByteCount, totalPackets);

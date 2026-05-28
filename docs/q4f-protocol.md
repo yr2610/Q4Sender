@@ -48,9 +48,11 @@ The sender currently generates a finite cycle:
 source packets + repair packets
 ```
 
-The UI then loops that cycle. This keeps the displayed frame count bounded while
-still avoiding the legacy mode requirement that every exact chunk id must be
-seen.
+The UI then loops that cycle. The repair tail is intentionally larger than the
+minimum decode overhead, so a receiver that misses frames keeps seeing fresh
+Wirehair packets for much longer before the sender wraps back to packet 1. This
+keeps the displayed frame count bounded while still avoiding the legacy mode
+requirement that every exact chunk id must be seen.
 
 ## Decoding Progress
 
