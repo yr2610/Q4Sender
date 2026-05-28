@@ -17,4 +17,10 @@
     <Compile Remove="Scanner\**\*.cs" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="Sender\Tools\wirehair-encode.mjs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Scanner\libs\wirehair-wasm\dist\wirehair.mjs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Scanner\libs\wirehair-wasm\dist\wirehair_core.mjs" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

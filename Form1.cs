@@ -504,7 +504,8 @@ namespace Q4Sender
                 asTextQ4 = text.Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries)
                                .Select(l => l.Trim())
                                .Where(l => l.StartsWith("Q4|", StringComparison.OrdinalIgnoreCase) ||
-                                           l.StartsWith("Q4F|", StringComparison.OrdinalIgnoreCase))
+                                           l.StartsWith("Q4F|", StringComparison.OrdinalIgnoreCase) ||
+                                           l.StartsWith("Q4W|", StringComparison.OrdinalIgnoreCase))
                                .ToArray();
             }
             catch { /* バイナリ等で失敗してもOK */ }
@@ -512,7 +513,8 @@ namespace Q4Sender
             if (asTextQ4.Length > 0)
             {
                 _lines = asTextQ4;
-                _currentLinesAreFountain = _lines.Any(l => l.StartsWith("Q4F|", StringComparison.OrdinalIgnoreCase));
+                _currentLinesAreFountain = _lines.Any(l => l.StartsWith("Q4F|", StringComparison.OrdinalIgnoreCase) ||
+                                                           l.StartsWith("Q4W|", StringComparison.OrdinalIgnoreCase));
                 Text = $"Q4Sender - 既成Q4行 {_lines.Length} 枚";
             }
             else
@@ -545,7 +547,7 @@ namespace Q4Sender
                     string sid;
                     if (_transferMode == TransferMode.Fountain)
                     {
-                        var package = PackFileToQ4FLines(path, payloadLen);
+                        var package = PackFileToFountainLines(path, payloadLen);
                         _lines = package.Lines;
                         _currentLinesAreFountain = true;
                         sid = package.Sid;
@@ -917,7 +919,7 @@ namespace Q4Sender
             return (lines, sid);
         }
 
-        private static FountainPackage PackFileToQ4FLines(string filePath, int legacyPayloadLen, string? sid = null)
+        private static FountainPackage PackFileToFountainLines(string filePath, int legacyPayloadLen, string? sid = null)
         {
             if (legacyPayloadLen <= FountainHeaderExtraAllowance)
             {
@@ -930,7 +932,7 @@ namespace Q4Sender
 
             while (symbolSize >= 16)
             {
-                var package = FountainCodec.PackFileToQ4FLines(filePath, symbolSize, sid);
+                var package = WirehairCodec.PackFileToQ4WLines(filePath, symbolSize, sid);
                 if (package.Lines.All(line => line.Length <= maxLineChars))
                 {
                     return package;
@@ -939,7 +941,7 @@ namespace Q4Sender
                 symbolSize -= Math.Max(1, symbolSize / 12);
             }
 
-            throw new InvalidOperationException("Unable to fit Q4F frames in the selected QR capacity.");
+            throw new InvalidOperationException("Unable to fit Q4W frames in the selected QR capacity.");
         }
 
         private int DeterminePayloadLength(out string? warningMessage)

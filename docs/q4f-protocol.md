@@ -1,65 +1,74 @@
-# Q4F Fountain Protocol
+# Q4W Wirehair Fountain Protocol
 
-Q4F is the fountain-mode QR text format used by Q4Sender and QRScanner.
-Legacy `Q4|...` frames remain supported.
+Q4W is the Wirehair-based fountain QR text format used by Q4Sender and
+QRScanner. Legacy `Q4|...` frames remain supported as the non-fountain mode.
+
+The earlier `Q4F|...` prototype was a custom LT-like experiment and is kept only
+as historical context. New fountain transfers should use `Q4W|...`.
 
 ## Frame Format
 
 ```text
-Q4F|<versionHex>|<symbolHex>/<totalHex>|<sid>|<sourceCountHex>|<symbolSizeHex>|<sourceLengthHex>|<crc32Hex>|<payload>
+Q4W|<versionHex>|<packetHex>/<totalHex>|<sid>|<sourceCountHex>|<packetBytesHex>|<sourceLengthHex>|<crc32Hex>|<payload>
 ```
 
 Example:
 
 ```text
-Q4F|1|2A/8C|7Z2|64|2F4|1A20|89ABCDEF|Base64UrlPayload
+Q4W|1|2A/8C|7Z2|64|2F4|1A20|89ABCDEF|Base64UrlPayload
 ```
 
 Fields:
 
 - `versionHex`: currently `1`.
-- `symbolHex`: 1-based encoded symbol id.
-- `totalHex`: number of encoded frames generated for the sender cycle.
+- `packetHex`: 1-based packet id for the finite sender cycle.
+- `totalHex`: number of packets generated for that sender cycle.
 - `sid`: 3-4 character session id.
-- `sourceCountHex`: number of original source symbols, also the decoder rank required for recovery.
-- `symbolSizeHex`: fixed byte size of each fountain symbol.
-- `sourceLengthHex`: original encoded byte length before zero padding.
-- `crc32Hex`: CRC-32 of the encoded byte stream.
-- `payload`: Base64URL without padding, containing one encoded symbol.
+- `sourceCountHex`: estimated number of original Wirehair source packets.
+- `packetBytesHex`: requested Wirehair packet size, including Wirehair's 8-byte packet header.
+- `sourceLengthHex`: zip archive byte length before fountain encoding.
+- `crc32Hex`: CRC-32 of the zip archive bytes.
+- `payload`: Base64URL without padding, containing the full Wirehair packet including its 8-byte header.
 
 ## Encoding
 
-Q4Sender currently keeps the existing payload preparation:
+Q4Sender keeps the existing payload preparation:
 
 ```text
-file -> zip archive bytes -> Q4F fountain symbols
+file -> zip archive bytes -> Wirehair packets -> Q4W frames
 ```
 
-The first `sourceCount` symbols are systematic symbols, so a perfect scan can
-recover exactly like plain chunking. Q4Sender then emits a reversed systematic
-replica pass before the XOR repair symbols. This gives the scanner a direct way
-to recover a late missing source symbol and avoids the "last one never arrives"
-failure mode that a tiny finite LT repair set can have. Later symbols are
-deterministic XOR repair symbols. The coefficient set is derived from `symbolId`
-and `sourceCount`, so the scanner does not need the coefficient list in the QR
-text.
+The sender uses `wirehair-wasm` to generate systematic and repair packets. The
+scanner passes the packet payloads to the same Wirehair decoder and accepts the
+result only when the recovered zip archive CRC-32 matches the frame metadata.
+
+The sender currently generates a finite cycle:
+
+```text
+source packets + repair packets
+```
+
+The UI then loops that cycle. This keeps the displayed frame count bounded while
+still avoiding the legacy mode requirement that every exact chunk id must be
+seen.
 
 ## Decoding Progress
 
-QRScanner reports progress as decoder rank:
+Wirehair does not expose decoder rank through the JavaScript wrapper, so
+QRScanner reports approximate progress as:
 
 ```text
-rank / sourceCount
+unique received packets / estimated source packet count+
 ```
 
-This is better than raw frame count because duplicated or dependent frames do not
-move the user-facing progress. Recovery is attempted when `rank == sourceCount`;
-the recovered bytes are accepted only if CRC-32 matches.
+The `+` is intentional: recovery may require a few more packets than the source
+count, and completion is authoritative only when Wirehair recovers bytes and the
+CRC-32 check passes.
 
 ## Compatibility
 
-- Sender default: Fountain.
+- Sender default: Fountain (`Q4W`).
 - Sender optional mode: Legacy Q4.
-- Scanner default: Fountain.
+- Scanner default: Fountain (`Q4W`).
 - Scanner optional mode: Legacy Q4.
 - SkipCode applies only to Legacy Q4.
