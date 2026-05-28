@@ -15,8 +15,15 @@ namespace Q4Sender
 {
     public partial class Form1 : Form
     {
+        private enum TransferMode
+        {
+            Fountain,
+            Legacy
+        }
+
         // ---- 状態 ----
         private const int DefaultPayloadLength = 700;
+        private const int FountainHeaderExtraAllowance = 48;
         private const int MaxQrByteCapacity = 2953; // Version40-L（Byteモード）の上限
         private const int QrLineOverheadWorstCase = 17; // "Q4|FFFF/FFFF|SID|" の最大オーバーヘッド
         private const int DefaultTimerInterval = 125;
@@ -50,6 +57,7 @@ namespace Q4Sender
         private Label _counterLabel;
         private Label _skipInfoLabel;
         private CheckBox _subtleQrCheckBox;
+        private ComboBox _modeComboBox;
         private TrackBar _seekBar;
         private bool _suppressSeekEvent;
         private bool _useSubtleQr = true;
@@ -60,6 +68,8 @@ namespace Q4Sender
         private bool[]? _skipExcludedMap;
         private int _skipExcludedCount;
         private bool _displayingScheduledIndex;
+        private TransferMode _transferMode = TransferMode.Fountain;
+        private bool _currentLinesAreFountain;
 
         public Form1()
         {
@@ -192,6 +202,28 @@ namespace Q4Sender
             };
             counterPanel.Controls.Add(skipPanel);
 
+            var modeLabel = new Label
+            {
+                AutoSize = true,
+                ForeColor = Color.White,
+                Text = "Mode",
+                TextAlign = ContentAlignment.MiddleLeft,
+                Margin = new Padding(0, 2, 6, 0),
+            };
+            skipPanel.Controls.Add(modeLabel);
+
+            _modeComboBox = new ComboBox
+            {
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Width = 96,
+                Margin = new Padding(0, 0, 16, 0),
+            };
+            _modeComboBox.Items.Add("Fountain");
+            _modeComboBox.Items.Add("Legacy");
+            _modeComboBox.SelectedIndex = 0;
+            _modeComboBox.SelectedIndexChanged += ModeComboBox_SelectedIndexChanged;
+            skipPanel.Controls.Add(_modeComboBox);
+
             var skipLabel = new Label
             {
                 AutoSize = true,
@@ -278,6 +310,7 @@ namespace Q4Sender
 
             UpdateSeekBarState();
             UpdateSkipInfoLabel();
+            UpdateSkipControlsState();
         }
 
         private static int ResolveTimerInterval(int? configuredInterval)
@@ -305,6 +338,25 @@ namespace Q4Sender
             if (_lines.Length > 0)
             {
                 ShowCurrent();
+            }
+        }
+
+        private void ModeComboBox_SelectedIndexChanged(object? sender, EventArgs e)
+        {
+            _transferMode = _modeComboBox.SelectedIndex == 1
+                ? TransferMode.Legacy
+                : TransferMode.Fountain;
+            UpdateSkipControlsState();
+        }
+
+        private void UpdateSkipControlsState()
+        {
+            var skipEnabled = _lines.Length > 0
+                ? !_currentLinesAreFountain
+                : _transferMode == TransferMode.Legacy;
+            if (_skipCodeTextBox != null)
+            {
+                _skipCodeTextBox.Enabled = skipEnabled;
             }
         }
 
@@ -451,7 +503,8 @@ namespace Q4Sender
                 var text = File.ReadAllText(path, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: false));
                 asTextQ4 = text.Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries)
                                .Select(l => l.Trim())
-                               .Where(l => l.StartsWith("Q4|", StringComparison.OrdinalIgnoreCase))
+                               .Where(l => l.StartsWith("Q4|", StringComparison.OrdinalIgnoreCase) ||
+                                           l.StartsWith("Q4F|", StringComparison.OrdinalIgnoreCase))
                                .ToArray();
             }
             catch { /* バイナリ等で失敗してもOK */ }
@@ -459,6 +512,7 @@ namespace Q4Sender
             if (asTextQ4.Length > 0)
             {
                 _lines = asTextQ4;
+                _currentLinesAreFountain = _lines.Any(l => l.StartsWith("Q4F|", StringComparison.OrdinalIgnoreCase));
                 Text = $"Q4Sender - 既成Q4行 {_lines.Length} 枚";
             }
             else
@@ -488,8 +542,21 @@ namespace Q4Sender
 
                 try
                 {
-                    var (packed, sid) = PackFileToQ4Lines(path, payloadLen: payloadLen);
-                    _lines = packed;
+                    string sid;
+                    if (_transferMode == TransferMode.Fountain)
+                    {
+                        var package = PackFileToQ4FLines(path, payloadLen);
+                        _lines = package.Lines;
+                        _currentLinesAreFountain = true;
+                        sid = package.Sid;
+                    }
+                    else
+                    {
+                        var (packed, legacySid) = PackFileToQ4Lines(path, payloadLen: payloadLen);
+                        _lines = packed;
+                        _currentLinesAreFountain = false;
+                        sid = legacySid;
+                    }
                     Text = $"Q4Sender - SID={sid} 生成 {_lines.Length} 枚";
 
                     if (!string.IsNullOrEmpty(configWarning))
@@ -514,6 +581,7 @@ namespace Q4Sender
             }
 
             ClearSkipSchedule();
+            UpdateSkipControlsState();
             _idx = 0;
             _paused = false;
             _timer.Start();
@@ -849,6 +917,31 @@ namespace Q4Sender
             return (lines, sid);
         }
 
+        private static FountainPackage PackFileToQ4FLines(string filePath, int legacyPayloadLen, string? sid = null)
+        {
+            if (legacyPayloadLen <= FountainHeaderExtraAllowance)
+            {
+                throw new ArgumentOutOfRangeException(nameof(legacyPayloadLen));
+            }
+
+            var maxLineChars = legacyPayloadLen + QrLineOverheadWorstCase;
+            var payloadChars = Math.Max(24, legacyPayloadLen - FountainHeaderExtraAllowance);
+            var symbolSize = Math.Max(16, (payloadChars * 3) / 4);
+
+            while (symbolSize >= 16)
+            {
+                var package = FountainCodec.PackFileToQ4FLines(filePath, symbolSize, sid);
+                if (package.Lines.All(line => line.Length <= maxLineChars))
+                {
+                    return package;
+                }
+
+                symbolSize -= Math.Max(1, symbolSize / 12);
+            }
+
+            throw new InvalidOperationException("Unable to fit Q4F frames in the selected QR capacity.");
+        }
+
         private int DeterminePayloadLength(out string? warningMessage)
         {
             warningMessage = null;
@@ -1114,6 +1207,11 @@ namespace Q4Sender
                 return;
             }
 
+            if (_currentLinesAreFountain)
+            {
+                return;
+            }
+
             var code = _skipCodeTextBox.Text;
             if (string.IsNullOrWhiteSpace(code))
             {
@@ -1239,6 +1337,12 @@ namespace Q4Sender
             if (_lines.Length == 0)
             {
                 _skipInfoLabel.Text = "target -";
+                return;
+            }
+
+            if (_currentLinesAreFountain)
+            {
+                _skipInfoLabel.Text = "fountain";
                 return;
             }
 
