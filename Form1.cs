@@ -275,7 +275,7 @@ namespace Q4Sender
                 ForeColor = Color.White,
                 BackColor = Color.Transparent,
                 Text = "Dual QR",
-                Checked = false,
+                Checked = true,
                 TextAlign = ContentAlignment.MiddleLeft,
                 Margin = new Padding(16, 1, 0, 0),
             };
