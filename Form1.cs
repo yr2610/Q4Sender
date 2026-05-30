@@ -57,6 +57,7 @@ namespace Q4Sender
         private Label _counterLabel;
         private Label _skipInfoLabel;
         private CheckBox _subtleQrCheckBox;
+        private CheckBox _dualQrCheckBox;
         private ComboBox _modeComboBox;
         private TrackBar _seekBar;
         private bool _suppressSeekEvent;
@@ -268,6 +269,19 @@ namespace Q4Sender
             _subtleQrCheckBox.CheckedChanged += SubtleQrCheckBox_CheckedChanged;
             skipPanel.Controls.Add(_subtleQrCheckBox);
 
+            _dualQrCheckBox = new CheckBox
+            {
+                AutoSize = true,
+                ForeColor = Color.White,
+                BackColor = Color.Transparent,
+                Text = "Dual QR",
+                Checked = false,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Margin = new Padding(16, 1, 0, 0),
+            };
+            _dualQrCheckBox.CheckedChanged += DualQrCheckBox_CheckedChanged;
+            skipPanel.Controls.Add(_dualQrCheckBox);
+
             _counterLabel = new Label
             {
                 AutoSize = true,
@@ -349,6 +363,14 @@ namespace Q4Sender
             UpdateSkipControlsState();
         }
 
+        private void DualQrCheckBox_CheckedChanged(object? sender, EventArgs e)
+        {
+            if (_lines.Length > 0)
+            {
+                ShowCurrent();
+            }
+        }
+
         private void UpdateSkipControlsState()
         {
             var skipEnabled = _lines.Length > 0
@@ -357,6 +379,12 @@ namespace Q4Sender
             if (_skipCodeTextBox != null)
             {
                 _skipCodeTextBox.Enabled = skipEnabled;
+            }
+            if (_dualQrCheckBox != null)
+            {
+                _dualQrCheckBox.Enabled = _lines.Length > 0
+                    ? _currentLinesAreFountain
+                    : _transferMode == TransferMode.Fountain;
             }
         }
 
@@ -727,56 +755,23 @@ namespace Q4Sender
 
             try
             {
-                var line = _lines[_idx];
-
-                // QRCoder で生成（誤り訂正 Q 推奨 / M でも可）
-                using var gen = new QRCodeGenerator();
-                var requestedVersion = _configuredVersion ?? -1;
-
-                QRCodeData? data = null;
-                try
+                using var primary = RenderQrBitmap(_lines[_idx]);
+                Bitmap display;
+                if (ShouldUseDualQr())
                 {
-                    data = gen.CreateQrCode(line, _effectiveEccLevel,
-                        forceUtf8: true, utf8BOM: false, EciMode.Utf8,
-                        requestedVersion: requestedVersion);
+                    var secondaryIndex = GetDualQrPartnerIndex(_idx);
+                    using var secondary = RenderQrBitmap(_lines[secondaryIndex]);
+                    display = StackQrBitmaps(primary, secondary);
                 }
-                catch (QRCoder.Exceptions.DataTooLongException) when (_configuredVersion != null)
+                else
                 {
-                    var failedVersion = _configuredVersion.Value;
-                    if (!_versionFallbackMessageShown)
-                    {
-                        MessageBox.Show(this,
-                            $"QRバージョン {failedVersion} の設定ではコンテンツを収容できません。自動サイズに戻して再生成します。",
-                            "Q4Sender", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                        _versionFallbackMessageShown = true;
-                    }
-
-                    _configuredVersion = null;
-                    data = gen.CreateQrCode(line, _effectiveEccLevel,
-                        forceUtf8: true, utf8BOM: false, EciMode.Utf8,
-                        requestedVersion: -1);
+                    display = (Bitmap)primary.Clone();
                 }
 
-                if (data == null)
-                {
-                    throw new InvalidOperationException("QR コードデータの生成に失敗しました。");
-                }
-
-                using (data)
-                {
-                    using var qr = new QRCode(data);
-                    using var bmp = qr.GetGraphic(
-                        pixelsPerModule: 16,       // 小さめウィンドウでも見やすいよう大きめ
-                        GetQrDarkColor(),
-                        GetQrLightColor(),
-                        drawQuietZones: true);
-
-                    _pictureBox.BackColor = GetQrLightColor();
-                    _pictureBox.Image?.Dispose();
-                    _pictureBox.Image = (Bitmap)bmp.Clone();
-
-                    UpdateFrameIndicators(repaintNow: false);
-                }
+                _pictureBox.BackColor = GetQrLightColor();
+                _pictureBox.Image?.Dispose();
+                _pictureBox.Image = display;
+                UpdateFrameIndicators(repaintNow: false);
 
                 // タイトルは控えめに（重くしない）
                 // Text = $"Q4Sender - {(_idx + 1)}/{_lines.Length} - {DateTime.Now:T}";
@@ -787,6 +782,73 @@ namespace Q4Sender
                 MessageBox.Show(this, "QR生成・描画でエラー: " + ex.Message, "Q4Sender",
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+        }
+
+        private Bitmap RenderQrBitmap(string line)
+        {
+            using var gen = new QRCodeGenerator();
+            var requestedVersion = _configuredVersion ?? -1;
+            QRCodeData? data;
+            try
+            {
+                data = gen.CreateQrCode(line, _effectiveEccLevel,
+                    forceUtf8: true, utf8BOM: false, EciMode.Utf8,
+                    requestedVersion: requestedVersion);
+            }
+            catch (QRCoder.Exceptions.DataTooLongException) when (_configuredVersion != null)
+            {
+                var failedVersion = _configuredVersion.Value;
+                if (!_versionFallbackMessageShown)
+                {
+                    MessageBox.Show(this,
+                        $"QRバージョン {failedVersion} の設定ではコンテンツを収容できません。自動サイズに戻して再生成します。",
+                        "Q4Sender", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    _versionFallbackMessageShown = true;
+                }
+
+                _configuredVersion = null;
+                data = gen.CreateQrCode(line, _effectiveEccLevel,
+                    forceUtf8: true, utf8BOM: false, EciMode.Utf8,
+                    requestedVersion: -1);
+            }
+
+            if (data == null)
+            {
+                throw new InvalidOperationException("QR コードデータの生成に失敗しました。");
+            }
+
+            using (data)
+            using (var qr = new QRCode(data))
+            {
+                return qr.GetGraphic(
+                    pixelsPerModule: 16,
+                    GetQrDarkColor(),
+                    GetQrLightColor(),
+                    drawQuietZones: true);
+            }
+        }
+
+        private Bitmap StackQrBitmaps(Bitmap upper, Bitmap lower)
+        {
+            const int gap = 16;
+            var width = Math.Max(upper.Width, lower.Width);
+            var height = upper.Height + gap + lower.Height;
+            var combined = new Bitmap(width, height);
+            using var graphics = Graphics.FromImage(combined);
+            graphics.Clear(GetQrLightColor());
+            graphics.DrawImageUnscaled(upper, (width - upper.Width) / 2, 0);
+            graphics.DrawImageUnscaled(lower, (width - lower.Width) / 2, upper.Height + gap);
+            return combined;
+        }
+
+        private bool ShouldUseDualQr()
+        {
+            return _dualQrCheckBox?.Checked == true && _currentLinesAreFountain && _lines.Length > 1;
+        }
+
+        private int GetDualQrPartnerIndex(int index)
+        {
+            return (index + Math.Max(1, _lines.Length / 2)) % _lines.Length;
         }
 
         private bool TryEnsureCurrentIndexVisible()
@@ -1042,7 +1104,9 @@ namespace Q4Sender
             }
             else
             {
-                _counterLabel.Text = $"{_idx + 1} / {_lines.Length}";
+                _counterLabel.Text = ShouldUseDualQr()
+                    ? $"{_idx + 1} + {GetDualQrPartnerIndex(_idx) + 1} / {_lines.Length}"
+                    : $"{_idx + 1} / {_lines.Length}";
             }
 
         }
